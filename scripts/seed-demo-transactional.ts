@@ -52,11 +52,11 @@ interface SeedContext {
     _id: string;
     name: string;
     pricePaise: number;
-    variantIds?: string[];
+    variantIds: string[];
   }>;
   settings: {
     serviceChargeEnabled: boolean;
-    serviceChargePercent: number;
+    serviceChargeRate: number;
     roundOffEnabled: boolean;
   };
   rng: () => number;
@@ -77,14 +77,14 @@ function istMidnightUtc(isoDay: string): number {
   return Date.UTC(y, m - 1, d, 0, 0, 0) - IST_OFFSET_MS;
 }
 
-function pick<T>(rng: () => number, arr: T[]): T {
+function pick<T>(rng: () => number, arr: readonly T[]): T {
     if (!arr || arr.length === 0) {
       throw new Error("pick() called with empty or undefined array");
     }
     return arr[Math.floor(rng() * arr.length)];
   }
 
-function weighted<T>(rng: () => number, items: T[], weights: number[]): T {
+function weighted<T>(rng: () => number, items: readonly T[], weights: readonly number[]): T {
   const total = weights.reduce((a, b) => a + b, 0);
   let r = rng() * total;
   for (let i = 0; i < items.length; i++) {
@@ -133,7 +133,7 @@ async function buildContext(services: any): Promise<SeedContext> {
     menuItems: orderableItems,
     settings: {
       serviceChargeEnabled: settingsDoc?.serviceChargeEnabled ?? true,
-      serviceChargePercent: settingsDoc?.serviceChargePercent ?? 5,
+      serviceChargeRate: settingsDoc?.serviceChargeRate ?? 5,
       roundOffEnabled: settingsDoc?.roundOffEnabled ?? true,
     },
     rng: mulberry32(20260801),
@@ -223,7 +223,7 @@ function computeServiceCharge(
 ): number {
   if (!ctx.settings.serviceChargeEnabled) return 0;
   const base = subtotal - discountAmount;
-  return Math.round(base * (ctx.settings.serviceChargePercent / 100));
+  return Math.round(base * (ctx.settings.serviceChargeRate / 100));
 }
 
 function computeRoundOff(
