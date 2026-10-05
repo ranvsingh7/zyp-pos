@@ -1,0 +1,5 @@
+[build.environment]
+  # MONGODB_DB_NAME is the app's database name (also used as a naming prefix
+  # throughout code, tests and docs). It is not sensitive, so exclude it from
+  # secrets scanning. AUTH_SECRET and MONGODB_URI are still scanned.
+  SECRETS_SCAN_OMIT_KEYS = "MONGODB_DB_NAME"
