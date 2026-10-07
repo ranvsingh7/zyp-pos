@@ -171,7 +171,7 @@ describe("1. what a plan grants", () => {
       await subscribe(restaurantId, planId);
       await signInAsOwner(restaurantId);
 
-      const access = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const access = await getServiceAccess(restaurantId, "OWNER");
       expect(access.has("POS")).toBe(true);
       expect(access.has("MENU")).toBe(true);
       expect(access.has("TABLES")).toBe(true);
@@ -197,7 +197,7 @@ describe("1. what a plan grants", () => {
       await subscribe(restaurantId, planId);
       await signInAsOwner(restaurantId);
 
-      const access = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const access = await getServiceAccess(restaurantId, "OWNER");
       expect(access.serviceKeys).toEqual(["POS", "MENU", "TABLES", "ORDERS"]);
       expect(access.has("KOT")).toBe(false);
     },
@@ -229,7 +229,7 @@ describe("1. what a plan grants", () => {
       await subscribe(restaurantId, planId);
       await signInAsOwner(restaurantId);
 
-      const access = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const access = await getServiceAccess(restaurantId, "OWNER");
       expect(access.serviceKeys).toEqual([]);
       expect(access.has("POS")).toBe(false);
       // An explicit empty snapshot is authoritative; it must not be "helpfully"
@@ -253,7 +253,7 @@ describe("2. the snapshot is the contract", () => {
       // The plan gains a service *after* the subscription was issued.
       await updatePlan(planId, { serviceKeys: PRO });
 
-      const access = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const access = await getServiceAccess(restaurantId, "OWNER");
       expect(access.source).toBe("SNAPSHOT");
       expect(access.has("REPORTS")).toBe(false);
       expect(access.has("BILLING")).toBe(false);
@@ -288,7 +288,7 @@ describe("2. the snapshot is the contract", () => {
         changedByRole: "SUPER_ADMIN",
       });
 
-      const access = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const access = await getServiceAccess(restaurantId, "OWNER");
       expect(access.has("REPORTS")).toBe(true);
       expect(access.has("BILLING")).toBe(true);
     },
@@ -312,7 +312,7 @@ describe("2. the snapshot is the contract", () => {
         changedByRole: "SUPER_ADMIN",
       });
 
-      const access = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const access = await getServiceAccess(restaurantId, "OWNER");
       expect(access.has("REPORTS")).toBe(true);
       expect(access.serviceKeys).toEqual(normalizeServiceKeys(PRO));
     },
@@ -371,7 +371,7 @@ describe("4. service access and role access are separate", () => {
       await signInAsOwner(restaurantId, "CASHIER");
 
       // The plan grants it...
-      const access = await getServiceAccess(restaurantId, { role: "CASHIER" });
+      const access = await getServiceAccess(restaurantId, "CASHIER");
       expect(access.has("REPORTS")).toBe(true);
       // ...and the service gate lets it through. The domain's own
       // assertCanViewReports(role) is what stops the cashier afterwards, which
@@ -413,9 +413,9 @@ describe("5. SUPER_ADMIN bypass", () => {
       await signInAsOwner(restaurantId, "SUPER_ADMIN");
 
       for (const key of ["BILLING", "INVENTORY", "REPORTS", "KOT"] as const) {
-        const access = await getServiceAccess(restaurantId, { role: "SUPER_ADMIN" });
+        const access = await getServiceAccess(restaurantId, "SUPER_ADMIN");
         expect(access.isSuperAdmin).toBe(true);
-        await expect(assertService(restaurantId, key, { role: "SUPER_ADMIN" })).resolves.toBeUndefined();
+        await expect(assertService(restaurantId, key, "SUPER_ADMIN")).resolves.toBeUndefined();
       }
     },
     30000
@@ -437,7 +437,7 @@ describe("6. subscriptions written before snapshots existed", () => {
       expect(raw?.serviceKeys).toBeUndefined();
 
       await signInAsOwner(restaurantId);
-      const access = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const access = await getServiceAccess(restaurantId, "OWNER");
       expect(access.isFallback).toBe(true);
       expect(access.source).toBe("PLAN");
       // The plan is the thing being sold, so its explicit services are used
@@ -465,7 +465,7 @@ describe("6. subscriptions written before snapshots existed", () => {
       await PlanModel.updateOne({ _id: planId }, { $unset: { serviceKeys: "" } });
 
       await signInAsOwner(restaurantId);
-      const access = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const access = await getServiceAccess(restaurantId, "OWNER");
       expect(access.source).toBe("LEGACY");
       // Locking a long-standing venue out of reports would be a regression.
       expect(access.has("REPORTS")).toBe(true);
@@ -488,7 +488,7 @@ describe("6. subscriptions written before snapshots existed", () => {
       // were switched on, a venue with a real snapshot keeps exactly what it
       // was sold.
       expect((await hasService(restaurantId, "CUSTOMERS"))).toBe(false);
-      const access = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const access = await getServiceAccess(restaurantId, "OWNER");
       expect(access.serviceKeys).toEqual(normalizeServiceKeys(BASIC));
     },
     30000
@@ -607,10 +607,10 @@ describe("8. what the views show", () => {
       await subscribe(restaurantId, planId);
       await signInAsOwner(restaurantId);
 
-      const decision = await checkService(restaurantId, "REPORTS", { role: "OWNER" });
+      const decision = await checkService(restaurantId, "REPORTS", "OWNER");
       expect(decision.allowed).toBe(true);
 
-      const denied = await checkService(restaurantId, "CUSTOMERS", { role: "OWNER" });
+      const denied = await checkService(restaurantId, "CUSTOMERS", "OWNER");
       if (!denied.allowed) {
         expect(denied.message).toMatch(/not included in your current plan/i);
         expect(denied.access.planName).toBeTruthy();

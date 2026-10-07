@@ -8,8 +8,9 @@ import {
   suspendRestaurant,
   reactivateRestaurant,
   transferRestaurant,
+  resetRestaurantOwnerPassword,
 } from "@/lib/admin/restaurant-admin-service";
-import { createRestaurantSchema, updateRestaurantSchema } from "@/lib/admin/query";
+import { createRestaurantSchema, resetOwnerPasswordSchema, updateRestaurantSchema } from "@/lib/admin/query";
 import { wrapAdminAction } from "./_shared";
 
 export interface RestaurantActionState {
@@ -158,5 +159,44 @@ export async function transferRestaurantAction(
     revalidatePath("/admin/restaurants");
     revalidatePath(`/admin/restaurants/${restaurantId}`);
     return { success: true, restaurantId };
+  });
+}
+
+/**
+ * SUPER_ADMIN-only: set a new password for the OWNER of the given restaurant.
+ *
+ * The target account is resolved from `Restaurant.ownerId` inside the service —
+ * this action accepts no `userId`, so a tampered form cannot redirect the write
+ * at another account. `requireSuperAdmin()` rejects every tenant role and any
+ * unauthenticated caller before the form is even parsed, and the service
+ * re-asserts the same rule independently.
+ *
+ * Nothing password-related leaves this function: the response carries only a
+ * status flag and a fixed message.
+ */
+export async function resetOwnerPasswordAction(
+  restaurantId: string,
+  formData: FormData
+): Promise<RestaurantActionState> {
+  const admin = await requireSuperAdmin();
+  return wrapAdminAction(async () => {
+    const parsed = resetOwnerPasswordSchema.safeParse({
+      newPassword: formData.get("newPassword"),
+      confirmPassword: formData.get("confirmPassword"),
+    });
+    if (!parsed.success) {
+      return { _errors: parsed.error.flatten().fieldErrors };
+    }
+    await resetRestaurantOwnerPassword(restaurantId, parsed.data.newPassword, {
+      actorId: admin.id,
+      role: admin.role,
+      reason: formData.get("reason")?.toString()?.trim() || null,
+    });
+    revalidatePath(`/admin/restaurants/${restaurantId}`);
+    return {
+      success: true,
+      restaurantId,
+      message: "Owner password reset successfully.",
+    };
   });
 }

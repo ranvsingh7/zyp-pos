@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import type { QueryFilter } from "mongoose";
 import { connectDB } from "@/lib/db";
 import { PlanModel } from "@/models/Plan";
@@ -538,24 +539,19 @@ export async function getSubscriptionByRestaurantId(
 }
 
 /**
- * Guard-facing access check, and the single source of truth for "may this
- * restaurant use ZYP POS?".
+ * Cache-key sentinel meaning "no explicit reference time supplied".
  *
- * A restaurant may only use the application when a SUPER_ADMIN has assigned it
- * a subscription that is still valid. No subscription at all is therefore
- * blocked — previously a missing subscription was treated as an open trial,
- * which let any self-onboarded venue in unchecked.
- *
- * Validity is decided from the stored status *and* the expiry date, never from
- * anything the client sends:
- *   - none at all            -> NONE (blocked)
- *   - ACTIVE / TRIAL, future expiry -> allowed (the product supports a trial)
- *   - expiry in the past     -> EXPIRED / GRACE_PERIOD, per platform policy
- *   - SUSPENDED or CANCELLED -> blocked regardless of the expiry date
+ * `getSubscriptionAccess()` used to default `now` to `new Date()`, and a fresh
+ * `Date` is a fresh object identity — so even wrapping this in `cache()` with the
+ * Date passed straight through would have missed on every call. Callers that do
+ * not pin a time now share this one stable key, and the "current time" is
+ * resolved once inside the request (see `readSubscriptionAccess`).
  */
-export async function getSubscriptionAccess(
+const IMPLICIT_NOW_KEY = 0;
+
+async function loadSubscriptionAccess(
   restaurantId: string,
-  now: Date = new Date()
+  now: Date
 ): Promise<SubscriptionAccessInfo> {
   await connectDB();
   const sub = await SubscriptionModel.findOne({ restaurantId }).lean();
@@ -584,6 +580,58 @@ export async function getSubscriptionAccess(
     expiryDate: sub.expiryDate ? new Date(sub.expiryDate) : null,
     planName: sub.planId ? String(sub.planId) : null,
   };
+}
+
+/**
+ * Request-scoped memo over `loadSubscriptionAccess`.
+ *
+ * Both arguments are primitives (`restaurantId`, and a timestamp in ms or the
+ * `IMPLICIT_NOW_KEY` sentinel), so React's `cache()` compares them by value and
+ * the key is stable across calls.
+ *
+ * `requireRestaurant()` is not itself cached and is called several times during
+ * one page render (directly by the page, by `requireService()` and by
+ * `AppHeaderServer`). Before this memo each of those ran its own
+ * `subscriptions` query. Now they share one, per request.
+ *
+ * Scope safety: the key includes the venue, and the cache is discarded at the
+ * end of the request, so nothing is shared between requests or between venues.
+ * A super admin and a tenant user browsing the same venue share the venue's
+ * subscription result within a request, which is correct — the lifecycle status
+ * is a property of the venue, not of the person looking at it.
+ */
+const readSubscriptionAccess = cache(
+  (restaurantId: string, nowKey: number): Promise<SubscriptionAccessInfo> =>
+    loadSubscriptionAccess(
+      restaurantId,
+      nowKey === IMPLICIT_NOW_KEY ? new Date() : new Date(nowKey)
+    )
+);
+
+/**
+ * Guard-facing access check, and the single source of truth for "may this
+ * restaurant use ZYP POS?".
+ *
+ * A restaurant may only use the application when a SUPER_ADMIN has assigned it
+ * a subscription that is still valid. No subscription at all is therefore
+ * blocked — previously a missing subscription was treated as an open trial,
+ * which let any self-onboarded venue in unchecked.
+ *
+ * Validity is decided from the stored status *and* the expiry date, never from
+ * anything the client sends:
+ *   - none at all            -> NONE (blocked)
+ *   - ACTIVE / TRIAL, future expiry -> allowed (the product supports a trial)
+ *   - expiry in the past     -> EXPIRED / GRACE_PERIOD, per platform policy
+ *   - SUSPENDED or CANCELLED -> blocked regardless of the expiry date
+ */
+export function getSubscriptionAccess(
+  restaurantId: string,
+  now?: Date
+): Promise<SubscriptionAccessInfo> {
+  return readSubscriptionAccess(
+    restaurantId,
+    now ? now.getTime() : IMPLICIT_NOW_KEY
+  );
 }
 
 /**

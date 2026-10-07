@@ -1,17 +1,21 @@
 import "server-only";
 
-import type { QueryFilter } from "mongoose";
+import mongoose, { type QueryFilter } from "mongoose";
 import { connectDB } from "@/lib/db";
 import { UserModel } from "@/models/User";
 import { RestaurantModel, type Restaurant } from "@/models/Restaurant";
 import { RestaurantSettingsModel } from "@/models/RestaurantSettings";
 import { hashPassword } from "@/lib/auth/password";
 import { businessTypes } from "@/lib/business-types";
+import { isSuperAdmin } from "@/lib/auth/roles";
 import { DEFAULT_TAX_CONFIG, type GstScheme } from "@/lib/billing/constants";
 import { resolveEffectiveTaxEnabled } from "@/lib/billing/tax-config";
 import type { TaxSettingsView } from "@/lib/billing/tax-settings";
 import {
+  AdminForbiddenError,
   DuplicateOwnerEmailError,
+  OwnerAccountNotFoundError,
+  OwnerPasswordResetForbiddenError,
   PlanNotFoundError,
   RestaurantNotFoundError,
   SubscriptionValidationError,
@@ -632,6 +636,138 @@ export async function transferRestaurant(
   });
 
   return getRestaurantById(restaurantId) as Promise<RestaurantAdminView>;
+}
+
+/* ------------------------------------------------------------------ */
+/* Owner password reset (SUPER_ADMIN)                                  */
+/* ------------------------------------------------------------------ */
+
+/** Result of a successful reset. Carries no password material of any kind. */
+export interface ResetOwnerPasswordResult {
+  restaurantId: string;
+  ownerId: string;
+  ownerEmail: string;
+}
+
+/**
+ * Sets a new password for the OWNER account of one restaurant, on behalf of a
+ * SUPER_ADMIN.
+ *
+ * Target resolution is entirely server-side and one-directional: the caller
+ * supplies a `restaurantId`, and the owner is read from `Restaurant.ownerId`.
+ * There is deliberately no `userId` parameter — a client that supplies one is
+ * not given a way to express it, so IDOR is not a case this function has to
+ * defend against at the write. The only account that can be affected is the
+ * canonical owner of the named restaurant.
+ *
+ * Safety properties:
+ * - Authorisation is asserted here as well as in the server action, so any
+ *   future caller still needs SUPER_ADMIN. The UI hiding the button is not a
+ *   control.
+ * - The write is `$set`-only and scoped by `_id` + `role: "OWNER"` +
+ *   `restaurantId`, so it can only ever touch the password of that one
+ *   OWNER user, and cannot be steered by client-supplied update operators.
+ * - A SUPER_ADMIN (or any non-OWNER) account reachable through `ownerId` is
+ *   refused, so no path here can reset a platform admin's own password.
+ * - `tokenVersion` is incremented in the same update. Sessions are stateless
+ *   signed JWTs with no server-side token record, so that counter is the
+ *   existing revocation lever: `loadUser()` compares the claim against the
+ *   stored value, which revokes every session the owner already holds while
+ *   leaving every other user — including the acting SUPER_ADMIN — untouched.
+ *
+ * The plaintext is hashed with the shared `hashPassword` (argon2id, the same
+ * call signup and the staff reset use) and is never selected, returned, logged
+ * or audited.
+ */
+export async function resetRestaurantOwnerPassword(
+  restaurantId: string,
+  newPassword: string,
+  meta: { actorId?: string | null; role?: string | null; reason?: string | null } = {}
+): Promise<ResetOwnerPasswordResult> {
+  // Defence in depth: the action resolves the actor through `requireSuperAdmin`,
+  // but the service refuses anyone else on its own so a direct/programmatic
+  // caller cannot skip the guard.
+  if (!isSuperAdmin(meta.role)) {
+    throw new AdminForbiddenError();
+  }
+
+  await connectDB();
+
+  if (!mongoose.isObjectIdOrHexString(restaurantId)) {
+    throw new RestaurantNotFoundError();
+  }
+  const restaurant = await RestaurantModel.findById(restaurantId)
+    .select("_id name ownerId")
+    .lean();
+  if (!restaurant) throw new RestaurantNotFoundError();
+
+  const ownerId = restaurant.ownerId ? String(restaurant.ownerId) : null;
+  if (!ownerId) throw new OwnerAccountNotFoundError();
+
+  // The target is identified by the restaurant's own owner relationship, and the
+  // projection deliberately excludes `passwordHash` — the hash is never read
+  // into memory on the read path, let alone returned.
+  const owner = await UserModel.findById(ownerId)
+    .select("_id email role restaurantId isActive")
+    .lean();
+  if (!owner) throw new OwnerAccountNotFoundError();
+
+  if (owner.role !== "OWNER") {
+    // Covers SUPER_ADMIN and every non-owner role. Refused before any write so a
+    // platform account can never be reset through this feature.
+    throw new OwnerPasswordResetForbiddenError();
+  }
+  // Tenant check: the owner must actually belong to the restaurant being reset.
+  // Without it, a stale or tampered `ownerId` pointing at an OWNER of a different
+  // restaurant would let one venue's admin action rewrite another venue's
+  // credential.
+  if (owner.restaurantId && String(owner.restaurantId) !== restaurantId) {
+    throw new OwnerPasswordResetForbiddenError(
+      "The owner account of this restaurant is not assigned to it."
+    );
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+
+  // Scoped to the resolved owner and re-asserted in the filter itself, so the
+  // update is not merely guarded in JS — if the role/tenant changed between the
+  // read above and this write, `matchedCount` is 0 and nothing is modified.
+  const result = await UserModel.updateOne(
+    { _id: ownerId, role: "OWNER", restaurantId: restaurantId },
+    { $set: { passwordHash }, $inc: { tokenVersion: 1 } }
+  );
+  if (result.matchedCount === 0) {
+    throw new OwnerPasswordResetForbiddenError(
+      "The owner account changed during the reset. Please reload and try again."
+    );
+  }
+
+  await logPlatformAudit({
+    action: "RESTAURANT_OWNER_PASSWORD_RESET",
+    restaurantId,
+    actorId: meta.actorId ?? undefined,
+    actorRole: "SUPER_ADMIN",
+    entityType: "USER",
+    entityId: ownerId,
+    entityName: String(owner.email),
+    summary: `Owner password reset for ${String(restaurant.name)}`,
+    reason: meta.reason ?? null,
+    // Metadata records who was affected and that sessions were revoked. It
+    // deliberately carries neither the new password nor the hash, and the full
+    // form payload is never passed through.
+    metadata: {
+      ownerUserId: ownerId,
+      ownerEmail: String(owner.email),
+      targetRole: "OWNER",
+      previousSessionsInvalidated: true,
+    },
+  });
+
+  return {
+    restaurantId,
+    ownerId,
+    ownerEmail: String(owner.email),
+  };
 }
 
 export interface RestaurantFilters {

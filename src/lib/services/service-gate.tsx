@@ -44,7 +44,11 @@ export async function requireService(
   header: ServiceGateHeader
 ): Promise<ServiceGateResult> {
   const [role, restaurant] = await Promise.all([getSessionRole(), requireRestaurant()]);
-  const decision = await checkService(restaurant.id, key, { role });
+  // `role` is passed as a bare primitive on purpose: `getServiceAccess()` is
+  // request-scoped `cache()`d, and object arguments would key the cache by
+  // identity, so a fresh `{ role }` literal here would make this miss every
+  // time and re-query the subscription on every render.
+  const decision = await checkService(restaurant.id, key, role);
   if (decision.allowed) return { allowed: true, access: decision.access };
   return {
     allowed: false,

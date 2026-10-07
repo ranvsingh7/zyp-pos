@@ -32,13 +32,17 @@ import { NextRequest } from "next/server";
 vi.mock("@/lib/auth/session", async () => {
   const actual =
     await vi.importActual<typeof import("@/lib/auth/session")>("@/lib/auth/session");
-  // Only the three readers that need a real browser request are stubbed; the
-  // signer stays real so the token below is a genuinely valid session JWT.
+  // Only the readers that need a real browser request are stubbed; the signer
+  // stays real so the token below is a genuinely valid session JWT.
+  // getSessionTokenVersion must be stubbed too: `loadUser` reads it to check for
+  // session revocation, and the real one calls `cookies()`, which throws outside
+  // a request scope. None of these users have been reset, so 0 is correct.
   return {
     ...actual,
     getSessionToken: vi.fn(),
     getSessionUserId: vi.fn(),
     getSessionRole: vi.fn(),
+    getSessionTokenVersion: vi.fn(async () => 0),
   };
 });
 
@@ -258,10 +262,10 @@ describe("1. FULL_ACCESS_MODE=true: an OWNER reaches every implemented service",
       // Baseline: without the flag this venue is locked out of five services.
       setFullAccess(false);
       expect(NOT_IN_BASIC.length).toBeGreaterThan(0);
-      expect(await hasService(restaurantId, "REPORTS", { role: "OWNER" })).toBe(false);
+      expect(await hasService(restaurantId, "REPORTS", "OWNER")).toBe(false);
 
       setFullAccess(true);
-      const access = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const access = await getServiceAccess(restaurantId, "OWNER");
       expect(access.source).toBe("FULL_ACCESS");
       expect(access.serviceKeys).toEqual(IMPLEMENTED);
 
@@ -269,7 +273,7 @@ describe("1. FULL_ACCESS_MODE=true: an OWNER reaches every implemented service",
         expect(access.has(key), key).toBe(true);
         // assertService is what server actions and API routes call.
         await expect(
-          assertService(restaurantId, key, { role: "OWNER" })
+          assertService(restaurantId, key, "OWNER")
         ).resolves.toBeUndefined();
       }
 
@@ -292,7 +296,7 @@ describe("1. FULL_ACCESS_MODE=true: an OWNER reaches every implemented service",
       for (const role of ["OWNER", "MANAGER", "CASHIER", "WAITER"]) {
         await signIn(role);
         setFullAccess(true);
-        const access = await getServiceAccess(restaurantId, { role });
+        const access = await getServiceAccess(restaurantId, role);
         expect(access.serviceKeys, role).toEqual(IMPLEMENTED);
         // Full access is not a promotion. Only a real SUPER_ADMIN is unrestricted.
         expect(access.isSuperAdmin, role).toBe(false);
@@ -332,7 +336,7 @@ describe("2. FULL_ACCESS_MODE=true: a restricted subscription stops blocking", (
       // On: the venue walks straight in. Nothing about the subscription changed.
       setFullAccess(true);
       await expect(requireRestaurant()).resolves.toMatchObject({ id: restaurantId });
-      expect((await checkService(restaurantId, "BILLING", { role: "OWNER" })).allowed).toBe(
+      expect((await checkService(restaurantId, "BILLING", "OWNER")).allowed).toBe(
         true
       );
       // The subscription service still tells the truth — it was not weakened.
@@ -364,7 +368,7 @@ describe("2. FULL_ACCESS_MODE=true: a restricted subscription stops blocking", (
 
       setFullAccess(true);
       await expect(requireRestaurant()).resolves.toMatchObject({ id: restaurantId });
-      expect(await hasService(restaurantId, "INVENTORY", { role: "OWNER" })).toBe(true);
+      expect(await hasService(restaurantId, "INVENTORY", "OWNER")).toBe(true);
 
       // No subscription at all: the other half of the "restricted" spectrum.
       await seedRestrictedVenue("Unprovisioned Kitchen");
@@ -378,7 +382,7 @@ describe("2. FULL_ACCESS_MODE=true: a restricted subscription stops blocking", (
 
       setFullAccess(true);
       await expect(requireRestaurant()).resolves.toMatchObject({ id: restaurantId });
-      expect(await hasService(restaurantId, "KOT", { role: "OWNER" })).toBe(true);
+      expect(await hasService(restaurantId, "KOT", "OWNER")).toBe(true);
     },
     30000
   );
@@ -393,18 +397,18 @@ describe("3. FULL_ACCESS_MODE=false: existing restrictions work normally", () =>
       await signIn("OWNER");
       setFullAccess(false);
 
-      const access = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const access = await getServiceAccess(restaurantId, "OWNER");
       // The real snapshot machinery, untouched: source is still SNAPSHOT.
       expect(access.source).toBe("SNAPSHOT");
       expect([...access.serviceKeys].sort()).toEqual([...BASIC].sort());
       expect(access.serviceKeys).not.toContain("REPORTS");
 
       for (const key of NOT_IN_BASIC) {
-        expect(await hasService(restaurantId, key, { role: "OWNER" }), key).toBe(false);
+        expect(await hasService(restaurantId, key, "OWNER"), key).toBe(false);
         await expect(
-          assertService(restaurantId, key, { role: "OWNER" })
+          assertService(restaurantId, key, "OWNER")
         ).rejects.toBeInstanceOf(ServiceAccessError);
-        const decision = await checkService(restaurantId, key, { role: "OWNER" });
+        const decision = await checkService(restaurantId, key, "OWNER");
         expect(decision.allowed, key).toBe(false);
         if (!decision.allowed) {
           expect(decision.message).toMatch(/not included in your current plan/i);
@@ -413,7 +417,7 @@ describe("3. FULL_ACCESS_MODE=false: existing restrictions work normally", () =>
 
       // Still granted what it paid for, and the lifecycle gate still runs.
       for (const key of BASIC as ServiceKey[]) {
-        expect(await hasService(restaurantId, key, { role: "OWNER" }), key).toBe(true);
+        expect(await hasService(restaurantId, key, "OWNER"), key).toBe(true);
       }
       const { requireRestaurant } = await import("@/lib/auth/guards");
       await expect(requireRestaurant()).resolves.toMatchObject({ id: restaurantId });
@@ -429,9 +433,9 @@ describe("3. FULL_ACCESS_MODE=false: existing restrictions work normally", () =>
       await signIn("OWNER");
 
       setFullAccess(false);
-      const withFalse = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const withFalse = await getServiceAccess(restaurantId, "OWNER");
       vi.stubEnv("FULL_ACCESS_MODE", undefined as unknown as string);
-      const withUnset = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const withUnset = await getServiceAccess(restaurantId, "OWNER");
 
       expect(withUnset.source).toBe("SNAPSHOT");
       expect(withUnset.serviceKeys).toEqual(withFalse.serviceKeys);
@@ -447,12 +451,12 @@ describe("3. FULL_ACCESS_MODE=false: existing restrictions work normally", () =>
       await signIn("OWNER");
 
       setFullAccess(true);
-      expect(await hasService(restaurantId, "BILLING", { role: "OWNER" })).toBe(true);
+      expect(await hasService(restaurantId, "BILLING", "OWNER")).toBe(true);
 
       setFullAccess(false);
-      expect(await hasService(restaurantId, "BILLING", { role: "OWNER" })).toBe(false);
+      expect(await hasService(restaurantId, "BILLING", "OWNER")).toBe(false);
       await expect(
-        assertService(restaurantId, "BILLING", { role: "OWNER" })
+        assertService(restaurantId, "BILLING", "OWNER")
       ).rejects.toBeInstanceOf(ServiceAccessError);
 
       // And the subscription is still ACTIVE and untouched throughout.
@@ -552,9 +556,9 @@ describe("5. SUPER_ADMIN behaviour is unchanged", () => {
       await signIn("OWNER");
 
       setFullAccess(false);
-      const off = await getServiceAccess(restaurantId, { role: "SUPER_ADMIN" });
+      const off = await getServiceAccess(restaurantId, "SUPER_ADMIN");
       setFullAccess(true);
-      const on = await getServiceAccess(restaurantId, { role: "SUPER_ADMIN" });
+      const on = await getServiceAccess(restaurantId, "SUPER_ADMIN");
 
       // Identical in every observable respect, including the services a tenant
       // could never have. The flag is consulted after this branch, not instead.
@@ -578,7 +582,7 @@ describe("5. SUPER_ADMIN behaviour is unchanged", () => {
       await signIn("OWNER");
       setFullAccess(true);
 
-      const access = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const access = await getServiceAccess(restaurantId, "OWNER");
       expect(access.isSuperAdmin).toBe(false);
       // Full access grants the tenant's catalogue, not the platform's: the
       // unimplemented keys a super admin bypasses are still denied.
@@ -610,7 +614,7 @@ describe("6. direct URLs are reachable in full-access mode", () => {
 
       setFullAccess(true);
       for (const key of IMPLEMENTED) {
-        const decision = await checkService(restaurantId, key, { role: "OWNER" });
+        const decision = await checkService(restaurantId, key, "OWNER");
         expect(decision.allowed, key).toBe(true);
         // The real page-gate function, not a reimplementation of it.
         const gate = await requireService(key, { userName: "Owner" });
@@ -787,9 +791,9 @@ describe("8. enabling full access modifies no plan or subscription data", () => 
       // Exercise every read path full access touches, including one real server
       // action and one real API route, so a hidden write would show up here.
       setFullAccess(true);
-      await getServiceAccess(restaurantId, { role: "OWNER" });
+      await getServiceAccess(restaurantId, "OWNER");
       for (const key of IMPLEMENTED) {
-        await assertService(restaurantId, key, { role: "OWNER" });
+        await assertService(restaurantId, key, "OWNER");
         await requireService(key, { userName: "Owner" });
       }
       const { listBillsAction } = await import("@/actions/billing/actions");

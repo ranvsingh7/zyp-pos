@@ -197,16 +197,16 @@ describe("reproduction: why a BASIC owner could open everything", () => {
     await seedLegacyVenue();
     signInAs("OWNER");
 
-    const access = await getServiceAccess(restaurantId, { role: "OWNER" });
+    const access = await getServiceAccess(restaurantId, "OWNER");
     console.log("LEGACY VENUE services:", JSON.stringify(access.serviceKeys));
     console.log("LEGACY VENUE source:", access.source, "isFallback:", access.isFallback);
 
     // This is the bug in one line: a venue nobody configured can open
     // inventory and reports.
     expect(access.isFallback).toBe(true);
-    expect(await hasService(restaurantId, "INVENTORY", { role: "OWNER" })).toBe(true);
-    expect(await hasService(restaurantId, "REPORTS", { role: "OWNER" })).toBe(true);
-    expect(await hasService(restaurantId, "BILLING", { role: "OWNER" })).toBe(true);
+    expect(await hasService(restaurantId, "INVENTORY", "OWNER")).toBe(true);
+    expect(await hasService(restaurantId, "REPORTS", "OWNER")).toBe(true);
+    expect(await hasService(restaurantId, "BILLING", "OWNER")).toBe(true);
     expect([...access.serviceKeys].sort()).toEqual([...LEGACY_SUBSCRIPTION_SERVICE_KEYS].sort());
   });
 
@@ -228,10 +228,10 @@ describe("reproduction: why a BASIC owner could open everything", () => {
   it("a subscription-less venue is also granted everything", async () => {
     if (!available) return;
     // No plan, no subscription at all.
-    const access = await getServiceAccess(restaurantId, { role: "OWNER" });
+    const access = await getServiceAccess(restaurantId, "OWNER");
     console.log("NO SUBSCRIPTION source:", access.source);
     expect(access.source).toBe("LEGACY");
-    expect(await hasService(restaurantId, "INVENTORY", { role: "OWNER" })).toBe(true);
+    expect(await hasService(restaurantId, "INVENTORY", "OWNER")).toBe(true);
   });
 });
 
@@ -261,8 +261,8 @@ describe("fix: an explicit snapshot is honoured everywhere", () => {
     signInAs("OWNER");
 
     for (const key of ["INVENTORY", "REPORTS", "BILLING", "KOT"] as const) {
-      expect(await hasService(restaurantId, key, { role: "OWNER" }), key).toBe(false);
-      const decision = await checkService(restaurantId, key, { role: "OWNER" });
+      expect(await hasService(restaurantId, key, "OWNER"), key).toBe(false);
+      const decision = await checkService(restaurantId, key, "OWNER");
       expect(decision.allowed, key).toBe(false);
     }
   });
@@ -272,7 +272,7 @@ describe("fix: an explicit snapshot is honoured everywhere", () => {
     await seedConfiguredBasicVenue();
     signInAs("OWNER");
     for (const key of BASIC as unknown as ServiceKey[]) {
-      expect(await hasService(restaurantId, key, { role: "OWNER" }), key).toBe(true);
+      expect(await hasService(restaurantId, key, "OWNER"), key).toBe(true);
     }
   });
 
@@ -316,9 +316,9 @@ describe("fix: an explicit snapshot is honoured everywhere", () => {
     // The service layer says yes for every role; RBAC is a separate decision
     // made by the domain guards (e.g. audit permissions), not by this layer.
     signInAs("CASHIER");
-    expect(await hasService(restaurantId, "REPORTS", { role: "CASHIER" })).toBe(true);
+    expect(await hasService(restaurantId, "REPORTS", "CASHIER")).toBe(true);
     signInAs("OWNER");
-    expect(await hasService(restaurantId, "REPORTS", { role: "OWNER" })).toBe(true);
+    expect(await hasService(restaurantId, "REPORTS", "OWNER")).toBe(true);
   });
 
   it("25. SUPER_ADMIN is never blocked by a tenant's plan", async () => {
@@ -327,7 +327,7 @@ describe("fix: an explicit snapshot is honoured everywhere", () => {
     signInAs("SUPER_ADMIN");
 
     for (const key of ["INVENTORY", "REPORTS", "BILLING"] as const) {
-      expect(await hasService(restaurantId, key, { role: "SUPER_ADMIN" }), key).toBe(true);
+      expect(await hasService(restaurantId, key, "SUPER_ADMIN"), key).toBe(true);
       const decision = await requireService(key, { userName: "Admin" });
       expect(decision.allowed, key).toBe(true);
     }
@@ -339,8 +339,8 @@ describe("fix: an explicit snapshot is honoured everywhere", () => {
     // Every non-super-admin role obeys the same gate.
     for (const role of ["OWNER", "MANAGER", "CASHIER", "WAITER"]) {
       signInAs(role);
-      expect(await hasService(restaurantId, "INVENTORY", { role }), role).toBe(false);
-      expect(await hasService(restaurantId, "REPORTS", { role }), role).toBe(false);
+      expect(await hasService(restaurantId, "INVENTORY", role), role).toBe(false);
+      expect(await hasService(restaurantId, "REPORTS", role), role).toBe(false);
     }
   });
 
@@ -382,9 +382,9 @@ describe("fix: an explicit snapshot is honoured everywhere", () => {
 
     await seedConfiguredBasicVenue();
     signInAs("OWNER");
-    expect(await hasService(restaurantId, "INVENTORY", { role: "OWNER" })).toBe(false);
+    expect(await hasService(restaurantId, "INVENTORY", "OWNER")).toBe(false);
     expect(
-      await hasService(otherRest.restaurantId, "INVENTORY", { role: "OWNER" })
+      await hasService(otherRest.restaurantId, "INVENTORY", "OWNER")
     ).toBe(true);
   });
 
@@ -398,7 +398,7 @@ describe("fix: an explicit snapshot is honoured everywhere", () => {
     );
     signInAs("OWNER");
     // The live plan now grants it; the issued subscription does not.
-    expect(await hasService(restaurantId, "INVENTORY", { role: "OWNER" })).toBe(false);
+    expect(await hasService(restaurantId, "INVENTORY", "OWNER")).toBe(false);
   });
 
   it("30. a plan that grants nothing grants nothing", async () => {
@@ -420,7 +420,7 @@ describe("fix: an explicit snapshot is honoured everywhere", () => {
     });
     signInAs("OWNER");
     for (const key of ["DASHBOARD", "POS", "MENU", "TABLES", "ORDERS", "INVENTORY"] as const) {
-      expect(await hasService(restaurantId, key, { role: "OWNER" }), key).toBe(false);
+      expect(await hasService(restaurantId, key, "OWNER"), key).toBe(false);
     }
   });
 });
@@ -432,7 +432,7 @@ describe("the migration actually closes the hole it was written for", () => {
     signInAs("OWNER");
 
     // Before: the reported symptom.
-    expect(await hasService(restaurantId, "INVENTORY", { role: "OWNER" })).toBe(true);
+    expect(await hasService(restaurantId, "INVENTORY", "OWNER")).toBe(true);
     const before = await requireService("INVENTORY", { userName: "Owner" });
     expect(before.allowed).toBe(true);
 
@@ -442,12 +442,12 @@ describe("the migration actually closes the hole it was written for", () => {
     });
 
     // After: the same owner, same venue, same session — now refused.
-    const access = await getServiceAccess(restaurantId, { role: "OWNER" });
+    const access = await getServiceAccess(restaurantId, "OWNER");
     expect(access.isFallback, "must no longer be borrowing the legacy list").toBe(false);
     expect([...access.serviceKeys].sort()).toEqual([...BASIC].sort());
 
     for (const key of ["INVENTORY", "REPORTS", "BILLING", "KOT"] as const) {
-      expect(await hasService(restaurantId, key, { role: "OWNER" }), key).toBe(false);
+      expect(await hasService(restaurantId, key, "OWNER"), key).toBe(false);
       const decision = await requireService(key, { userName: "Owner" });
       expect(decision.allowed, key).toBe(false);
       if (!decision.allowed) {
@@ -456,7 +456,7 @@ describe("the migration actually closes the hole it was written for", () => {
     }
     // What they actually paid for still works.
     for (const key of BASIC as unknown as ServiceKey[]) {
-      expect(await hasService(restaurantId, key, { role: "OWNER" }), key).toBe(true);
+      expect(await hasService(restaurantId, key, "OWNER"), key).toBe(true);
     }
   });
 
@@ -504,7 +504,7 @@ describe("AUDIT is a governed module like every other one", () => {
     });
     signInAs("OWNER");
 
-    expect(await hasService(restaurantId, "AUDIT", { role: "OWNER" })).toBe(false);
+    expect(await hasService(restaurantId, "AUDIT", "OWNER")).toBe(false);
     const decision = await requireService("AUDIT", { userName: "Owner" });
     expect(decision.allowed).toBe(false);
     if (!decision.allowed) {
@@ -533,7 +533,7 @@ describe("AUDIT is a governed module like every other one", () => {
     // stopped by the existing role guard inside it, not by the service layer.
     for (const role of ["OWNER", "MANAGER", "CASHIER", "WAITER"]) {
       signInAs(role);
-      expect(await hasService(restaurantId, "AUDIT", { role }), role).toBe(true);
+      expect(await hasService(restaurantId, "AUDIT", role), role).toBe(true);
     }
   });
 
@@ -555,7 +555,7 @@ describe("AUDIT is a governed module like every other one", () => {
       createdBy: null,
     });
     signInAs("SUPER_ADMIN");
-    expect(await hasService(restaurantId, "AUDIT", { role: "SUPER_ADMIN" })).toBe(true);
+    expect(await hasService(restaurantId, "AUDIT", "SUPER_ADMIN")).toBe(true);
     expect((await requireService("AUDIT", { userName: "Admin" })).allowed).toBe(true);
   });
 });

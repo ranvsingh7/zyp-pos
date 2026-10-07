@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { PageHeader, formatDate, formatDateTime } from "@/components/admin/admin-common";
 import { SubscriptionStatusBadge, PaymentStatusBadge } from "@/components/admin/status-badge";
 import { SubscriptionActions } from "@/components/admin/subscription-actions";
-import { EditRestaurantDialog, SuspendRestaurantDialog, ReactivateRestaurantDialog, TransferRestaurantDialog } from "@/components/admin/restaurant-actions";
+import { EditRestaurantDialog, SuspendRestaurantDialog, ReactivateRestaurantDialog, TransferRestaurantDialog, ResetOwnerPasswordDialog } from "@/components/admin/restaurant-actions";
 import { EditPaymentDialog, RefundPaymentButton } from "@/components/admin/payment-actions";
 import { getRestaurantById } from "@/lib/admin/restaurant-admin-service";
 import { listPlans } from "@/lib/admin/plan-service";
@@ -50,6 +50,9 @@ export default async function AdminRestaurantDetailPage({
               <ReactivateRestaurantDialog restaurant={restaurant} />
             )}
             <TransferRestaurantDialog restaurant={restaurant} />
+            {/* Renders nothing when the restaurant has no resolvable owner, so
+                there is no way to submit a reset with no target account. */}
+            <ResetOwnerPasswordDialog restaurant={restaurant} />
           </div>
         }
       />

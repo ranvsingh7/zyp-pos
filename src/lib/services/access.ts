@@ -125,21 +125,44 @@ function fullAccessEntitlement(): ResolvedServiceAccess {
 /**
  * Entitlement for a restaurant, resolved once per request.
  *
- * `cache()` keeps this to a single pair of queries per render pass even though
- * a page asks about several services, and mirrors the existing per-request
- * caching in `getCurrentUser` / `getPlatformSettings`.
+ * ## Why the parameters are primitives, not an options object
+ *
+ * `cache()` keys each entry by **argument identity**. React's implementation
+ * keeps primitive arguments in a `Map` and object/function arguments in a
+ * `WeakMap`, so a freshly constructed object literal is a guaranteed cache miss
+ * on every call:
+ *
+ *     getServiceAccess(rid, { role })   // new object each time -> 1 query per call
+ *
+ * That is exactly the bug this signature used to have. Both
+ * `requireService()` (via `checkService`) and `AppHeaderServer` passed their own
+ * `{ role }` literal, so the two logically identical entitlement checks in a
+ * single page render each ran their own `subscriptions` + `plans` query, and
+ * `cache()` silently did nothing. It is passed as a bare `string | null` now so
+ * both call sites collapse onto one cache entry and one pair of queries.
+ *
+ * Do not reintroduce an options object here without re-checking that, or the
+ * de-duplication silently stops working.
+ *
+ * ## Cache scope
+ *
+ * `cache()` is scoped to a single React request render, so a result is never
+ * shared between two requests, two users or two venues. Within one request the
+ * venue id is the key and it is always derived from the session
+ * (`getCurrentRestaurant()` <- `user.restaurantId`), never from the client —
+ * see the module docblock above.
  */
 export const getServiceAccess = cache(
   async (
     restaurantId: string,
-    opts: { role?: string | null } = {}
+    role?: string | null
   ): Promise<ResolvedServiceAccess> => {
     if (!restaurantId) return NOTHING;
 
     // A SUPER_ADMIN is never restricted by a tenant's plan. The admin panel
     // uses requireSuperAdmin(), but a super admin operating inside a venue's
     // own pages must not be locked out of a feature by that venue's plan.
-    if (opts.role != null && isSuperAdmin(opts.role)) {
+    if (role != null && isSuperAdmin(role)) {
       return {
         ...NOTHING,
         serviceKeys: [],
@@ -215,10 +238,10 @@ export const getServiceAccess = cache(
 export async function hasService(
   restaurantId: string,
   key: ServiceKey,
-  opts: { role?: string | null } = {}
+  role?: string | null
 ): Promise<boolean> {
   if (!isServiceKey(key)) return false;
-  const access = await getServiceAccess(restaurantId, opts);
+  const access = await getServiceAccess(restaurantId, role);
   return access.has(key);
 }
 
@@ -229,12 +252,12 @@ export async function hasService(
 export async function assertService(
   restaurantId: string,
   key: ServiceKey,
-  opts: { role?: string | null } = {}
+  role?: string | null
 ): Promise<void> {
   if (!isServiceKey(key)) {
     throw new ServiceAccessError(key);
   }
-  const access = await getServiceAccess(restaurantId, opts);
+  const access = await getServiceAccess(restaurantId, role);
   if (!access.has(key)) throw new ServiceAccessError(key);
 }
 
@@ -262,7 +285,7 @@ export async function assertServiceForCurrentVenue(key: ServiceKey): Promise<voi
     // it, and failing closed is the only safe answer.
     throw new ServiceAccessError(key);
   }
-  await assertService(restaurantId, key, { role: user.role });
+  await assertService(restaurantId, key, user.role);
 }
 
 export type PageServiceDecision =
@@ -277,9 +300,9 @@ export type PageServiceDecision =
 export async function checkService(
   restaurantId: string,
   key: ServiceKey,
-  opts: { role?: string | null } = {}
+  role?: string | null
 ): Promise<PageServiceDecision> {
-  const access = await getServiceAccess(restaurantId, opts);
+  const access = await getServiceAccess(restaurantId, role);
   if (access.has(key)) return { allowed: true, access };
   const definition = getService(key);
   return {

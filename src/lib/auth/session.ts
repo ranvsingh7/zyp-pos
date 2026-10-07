@@ -20,6 +20,16 @@ export interface SessionPayload {
   restaurantId?: string | null;
   /** Snapshot of the role at login; the DB remains the source of truth. */
   role?: string | null;
+  /**
+   * Snapshot of `User.tokenVersion` at login. Because the session cookie is a
+   * stateless JWT, this claim is what makes a single user's sessions revocable:
+   * `loadUser()` compares it against the live database value, so bumping the
+   * counter (as a password reset does) invalidates that user's existing tokens
+   * and nothing else. Tokens minted before this claim existed decode as 0,
+   * matching the schema default, so no existing session is invalidated by the
+   * upgrade itself.
+   */
+  tokenVersion?: number;
   [key: string]: unknown;
 }
 
@@ -47,7 +57,11 @@ export async function decryptSession(
         ? payload.restaurantId
         : null;
     const role = typeof payload.role === "string" ? payload.role : null;
-    return { userId, restaurantId, role };
+    const tokenVersion =
+      typeof payload.tokenVersion === "number" && Number.isFinite(payload.tokenVersion)
+        ? payload.tokenVersion
+        : 0;
+    return { userId, restaurantId, role, tokenVersion };
   } catch {
     return null;
   }
@@ -56,12 +70,17 @@ export async function decryptSession(
 export async function setSession(
   userId: string,
   restaurantId?: string | null,
-  role?: string | null
+  role?: string | null,
+  tokenVersion?: number | null
 ): Promise<void> {
   const token = await encryptSession({
     userId,
     restaurantId: restaurantId ?? null,
     role: role ?? null,
+    // Stamped so a later credential change can revoke this token by bumping the
+    // stored counter. `0` is the schema default, so callers that omit it (signup,
+    // onboarding) stay valid against any freshly created account.
+    tokenVersion: tokenVersion ?? 0,
   });
 
   const cookieOptions = {
@@ -102,6 +121,13 @@ export const getSessionRole = cache(async (): Promise<string | null> => {
   const token = await getSessionToken();
   const session = await decryptSession(token);
   return session?.role ?? null;
+});
+
+/** Session-generation claim carried by the current cookie; see `SessionPayload`. */
+export const getSessionTokenVersion = cache(async (): Promise<number> => {
+  const token = await getSessionToken();
+  const session = await decryptSession(token);
+  return session?.tokenVersion ?? 0;
 });
 
 export { SESSION_COOKIE };

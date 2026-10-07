@@ -68,6 +68,13 @@ export const TABLE_AUDIT_ACTIONS = [
   "RESTAURANT_EDITED",
   "RESTAURANT_SUSPENDED",
   "RESTAURANT_ACTIVATED",
+  // Platform-admin credential action. Distinct from RESTAURANT_EDITED so a
+  // password reset is greppable on its own, and so the audit viewer can tell a
+  // credential change apart from an ordinary field edit. Deliberately does not
+  // reuse STAFF_CHANGE: that action is tenant-scoped and is written by
+  // OWNER/MANAGER inside a restaurant, whereas this one is written by a
+  // SUPER_ADMIN against a restaurant's owner account.
+  "RESTAURANT_OWNER_PASSWORD_RESET",
   "SUBSCRIPTION_CREATED",
   "SUBSCRIPTION_RENEWED",
   "SUBSCRIPTION_PLAN_CHANGED",
@@ -232,6 +239,41 @@ tableAuditLogSchema.index({ restaurantId: 1, entityType: 1, entityId: 1 });
 tableAuditLogSchema.index({ action: 1, createdAt: -1 });
 tableAuditLogSchema.index({ entityType: 1, entityId: 1 });
 tableAuditLogSchema.index({ userId: 1, createdAt: -1 });
+
+/**
+ * The index the `/audit` viewer actually runs on.
+ *
+ * `listAuditLogs()` in `src/lib/audit/audit-service.ts` issues:
+ *
+ *     find({ restaurantId })
+ *       .sort({ createdAt: -1, _id: -1 })
+ *       .skip((page - 1) * pageSize)
+ *       .limit(pageSize)          // pageSize is 25
+ *
+ * Equality on `restaurantId`, then a **two-field descending sort**. The trailing
+ * `_id: -1` is the pagination tiebreaker, and it is the reason the index above at
+ * `{ restaurantId: 1, createdAt: -1 }` cannot serve this query: MongoDB will only
+ * skip the sort stage when the index covers the sort specification in full.
+ *
+ * Measured with `explain("executionStats")` on 12,967 documents (10,022 belonging
+ * to the queried venue), that mismatch forced a plan of
+ * `SORT -> FETCH -> IXSCAN(restaurantId_1)`: the entire tenant history was
+ * fetched and buffered to return 25 rows.
+ *
+ *     docs/keys examined   10022 -> 25
+ *     executionTimeMillis     43 -> 0
+ *     plan       SORT/FETCH/IXSCAN -> LIMIT/FETCH/IXSCAN(this index)
+ *
+ * `_id` is a real, unique, descending-safe field and is included purely to match
+ * the sort; MongoDB does not append `_id` to compound indexes the way it appends
+ * to a single-field index, so it must be declared. `action`/`entityType`/
+ * `success` are deliberately NOT included: they are low-cardinality and optional,
+ * and putting one between `restaurantId` and `createdAt` breaks the sort match for
+ * the unfiltered page load (measured: it pushed the default query back up to
+ * 10,022 keys examined). Those filtered variants are already served by the
+ * indexes above.
+ */
+tableAuditLogSchema.index({ restaurantId: 1, createdAt: -1, _id: -1 });
 
 /**
  * Append-only enforcement. Audit evidence must never be mutated or deleted by

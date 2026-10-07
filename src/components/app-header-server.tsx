@@ -21,6 +21,9 @@ export async function AppHeaderServer(props: {
   restaurantLogoUrl?: string | null;
 }) {
   const [restaurant, role] = await Promise.all([requireRestaurant(), getSessionRole()]);
-  const access = await getServiceAccess(restaurant.id, { role });
+  // `role` is a primitive so this shares one cache entry with the identical
+  // check the page already made through `requireService()`. See the note on
+  // `getServiceAccess()` about why an options object must not be reintroduced.
+  const access = await getServiceAccess(restaurant.id, role);
   return <AppHeader {...props} serviceKeys={access.serviceKeys} />;
 }

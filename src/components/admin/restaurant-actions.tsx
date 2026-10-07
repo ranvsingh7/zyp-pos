@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useCloseOnSuccess } from "@/components/admin/admin-hooks";
 import { useActionState, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { KeyRound, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +22,7 @@ import {
   suspendRestaurantAction,
   reactivateRestaurantAction,
   transferRestaurantAction,
+  resetOwnerPasswordAction,
   type RestaurantActionState,
 } from "@/actions/admin/restaurants";
 
@@ -588,8 +589,161 @@ export function ReactivateRestaurantDialog({ restaurant }: { restaurant: Restaur
 }
 
 /* ------------------------------------------------------------------ */
-/* Transfer ownership                                                  */
+/* Reset owner password (SUPER_ADMIN)                                  */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Sets a new password for the restaurant's owner account.
+ *
+ * Only `restaurant.id` is submitted; the owner is resolved server-side from the
+ * restaurant, so this dialog has no way to name a different account. The fields
+ * are uncontrolled inputs inside a `<form action>` — the draft is never put in
+ * the URL or in storage, and it is discarded when the dialog closes.
+ *
+ * The old password is not shown, not required, and not knowable: only the
+ * argon2id hash is stored, and it is never selected for display.
+ *
+ * Unlike the other admin dialogs this one deliberately does NOT auto-close on
+ * success (`useCloseOnSuccess`). A credential change is not a fire-and-forget
+ * edit: the admin has to see and acknowledge that the reset happened, and
+ * closing the dialog immediately would hide the confirmation (and the password
+ * fields with it) before it could be read. Success swaps the form for a short
+ * confirmation with an explicit Close.
+ */
+export function ResetOwnerPasswordDialog({
+  restaurant,
+}: {
+  restaurant: RestaurantAdminView;
+}) {
+  const [state, formAction, pending] = useActionState<RestaurantActionState, FormData>(
+    (prev, form) => resetOwnerPasswordAction(restaurant.id, form),
+    {}
+  );
+  const [open, setOpen] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [acknowledged, setAcknowledged] = useState<RestaurantActionState | null>(null);
+
+  // Identity comparison rather than a boolean: `acknowledged` records the exact
+  // state object the admin has already dismissed, so a fresh submission produces
+  // a new object and shows its own confirmation, while simply reopening never
+  // replays the previous success message.
+  const done = Boolean(state.success) && acknowledged !== state;
+
+  function acknowledge() {
+    setAcknowledged(state);
+    setShowPassword(false);
+    setOpen(false);
+  }
+
+  // Nothing to reset against: a restaurant with no resolvable owner has no
+  // account this action could legitimately act on.
+  if (!restaurant.owner) return null;
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && done) setAcknowledged(state);
+        setOpen(next);
+      }}
+    >
+      <Button onClick={() => setOpen(true)} variant="secondary">
+        <KeyRound />
+        Reset Password
+      </Button>
+      <DialogPopup className="sm:max-w-md">
+        {done ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Reset owner password</DialogTitle>
+              <DialogDescription>
+                The password for {restaurant.owner.email} has been changed and their previous
+                sessions have ended. Share the new password with them over a channel you trust —
+                it is not shown here again.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogBody>
+              <div className="rounded-lg px-3 py-2 text-sm bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+                Owner password reset successfully.
+              </div>
+            </DialogBody>
+            <DialogFooter>
+              <Button type="button" onClick={acknowledge}>
+                Close
+              </Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <form action={formAction}>
+            <DialogHeader>
+              <DialogTitle>Reset owner password</DialogTitle>
+              <DialogDescription>
+                Sets a new password for this restaurant&apos;s owner. Their current sessions end
+                immediately and they must sign in again with the new password.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogBody>
+              <StateNote state={state} />
+              <div className="grid gap-1 rounded-lg border bg-muted/40 p-3 text-sm">
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">Restaurant</span>
+                  <span className="font-medium">{restaurant.name}</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">Owner email</span>
+                  <span className="font-medium">{restaurant.owner.email}</span>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="owner-new-password">New password</Label>
+                  <div className="relative">
+                    <Input
+                      id="owner-new-password"
+                      name="newPassword"
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      className="pr-16"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="absolute inset-y-0 right-2 my-auto h-7 rounded px-2 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">At least 8 characters.</p>
+                  <FieldError errors={state._errors?.newPassword} />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="owner-confirm-password">Confirm password</Label>
+                  <Input
+                    id="owner-confirm-password"
+                    name="confirmPassword"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                  />
+                  <FieldError errors={state._errors?.confirmPassword} />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="owner-reset-reason">Reason</Label>
+                  <Input id="owner-reset-reason" name="reason" placeholder="Optional" />
+                </div>
+              </div>
+            </DialogBody>
+            <DialogFooter>
+              <Button type="submit" variant="destructive" disabled={pending}>
+                {pending && <Loader2 className="animate-spin" />}
+                Reset Password
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
+      </DialogPopup>
+    </Dialog>
+  );
+}
 
 export function TransferRestaurantDialog({ restaurant }: { restaurant: RestaurantAdminView }) {
   const [state, formAction, pending] = useActionState<RestaurantActionState, FormData>(

@@ -66,6 +66,11 @@ export async function loginAction(
     }
   }
 
-  await setSession(result.userId, result.restaurantId, result.role ?? null);
+  await setSession(
+    result.userId,
+    result.restaurantId,
+    result.role ?? null,
+    result.tokenVersion
+  );
   redirect(result.role === "SUPER_ADMIN" ? "/admin" : "/dashboard");
 }

@@ -11,6 +11,11 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.{ts,tsx}", "tests/**/*.test.{ts,tsx}"],
+    // `tests/rsc/**` needs the react-server build of React so a real request
+    // cache scope exists. Running it here would resolve the client build, where
+    // `cache()` is a no-op, and every de-duplication assertion would be
+    // meaningless. Those suites run via `tests/vitest.rsc.config.ts`.
+    exclude: ["tests/rsc/**", "node_modules/**", ".next/**"],
     globals: true,
     env: {
       MONGODB_URI: "mongodb://127.0.0.1:27017/restopos_test",

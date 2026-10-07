@@ -35,6 +35,31 @@ export class DuplicateOwnerEmailError extends Error {
   }
 }
 
+/**
+ * The restaurant exists but its `ownerId` points at no live account — either
+ * unset, or a user document that was removed. Distinct from
+ * `RestaurantNotFoundError` so the caller can say which of the two failed
+ * without the UI having to probe.
+ */
+export class OwnerAccountNotFoundError extends Error {
+  constructor() {
+    super("Owner account not found.");
+    this.name = "OwnerAccountNotFoundError";
+  }
+}
+
+/**
+ * The resolved owner account exists but holds a role this feature must never
+ * touch. In practice this is the guard that stops a SUPER_ADMIN password from
+ * being reset by pointing a restaurant's `ownerId` at a platform account.
+ */
+export class OwnerPasswordResetForbiddenError extends Error {
+  constructor(message = "This account cannot be reset through the restaurant owner password reset.") {
+    super(message);
+    this.name = "OwnerPasswordResetForbiddenError";
+  }
+}
+
 export class SubscriptionNotFoundError extends Error {
   constructor() {
     super("Subscription not found.");

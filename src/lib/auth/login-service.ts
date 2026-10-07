@@ -32,6 +32,13 @@ export type LoginResult =
       userId: string;
       restaurantId: string | null;
       role: string;
+      /**
+       * Current session-generation counter, handed to `setSession` so the minted
+       * JWT carries it. Without this the token would claim 0 and a user whose
+       * counter had already been bumped (e.g. after a password reset) would be
+       * locked out of their own new password.
+       */
+      tokenVersion: number;
     }
   | { ok: false; reason: "validation" | "invalid_credentials" | "deactivated" | "rate_limited" };
 
@@ -42,6 +49,7 @@ interface LoginUserDoc {
   role: string;
   restaurantId?: unknown;
   isActive: boolean;
+  tokenVersion?: number | null;
 }
 
 /** Escapes PCRE metacharacters so a user-supplied email cannot alter the pattern. */
@@ -73,6 +81,7 @@ export async function attemptLogin(input: LoginAttemptInput): Promise<LoginResul
         role: 1,
         restaurantId: 1,
         isActive: 1,
+        tokenVersion: 1,
       },
     },
   ]);
@@ -191,5 +200,11 @@ export async function attemptLogin(input: LoginAttemptInput): Promise<LoginResul
     metadata: { email },
   });
 
-  return { ok: true, userId, restaurantId, role: user.role };
+  return {
+    ok: true,
+    userId,
+    restaurantId,
+    role: user.role,
+    tokenVersion: user.tokenVersion ?? 0,
+  };
 }

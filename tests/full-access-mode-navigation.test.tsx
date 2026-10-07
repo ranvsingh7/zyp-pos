@@ -24,7 +24,16 @@ vi.mock("next/navigation", async () => {
 vi.mock("@/lib/auth/session", async () => {
   const actual =
     await vi.importActual<typeof import("@/lib/auth/session")>("@/lib/auth/session");
-  return { ...actual, getSessionToken: vi.fn(), getSessionUserId: vi.fn(), getSessionRole: vi.fn() };
+  // getSessionTokenVersion must be stubbed as well: `loadUser` reads it to check
+  // for session revocation, and the real one calls `cookies()`, which throws
+  // outside a request scope. No reset has happened here, so 0 is correct.
+  return {
+    ...actual,
+    getSessionToken: vi.fn(),
+    getSessionUserId: vi.fn(),
+    getSessionRole: vi.fn(),
+    getSessionTokenVersion: vi.fn(async () => 0),
+  };
 });
 
 import {
@@ -157,7 +166,7 @@ describe("navigation under FULL_ACCESS_MODE", () => {
       await seedBasicVenueAndSignIn();
       setFullAccess(false);
 
-      const access = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const access = await getServiceAccess(restaurantId, "OWNER");
       const html = renderToStaticMarkup(
         <AppHeader userName="Owner" serviceKeys={access.serviceKeys} />
       );
@@ -178,7 +187,7 @@ describe("navigation under FULL_ACCESS_MODE", () => {
       await seedBasicVenueAndSignIn();
       setFullAccess(true);
 
-      const access = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const access = await getServiceAccess(restaurantId, "OWNER");
       expect(access.serviceKeys).toEqual(listActiveServices().map((s) => s.key));
 
       // The real server wrapper, not a hand-fed prop list.
@@ -201,7 +210,7 @@ describe("navigation under FULL_ACCESS_MODE", () => {
       await seedBasicVenueAndSignIn();
 
       setFullAccess(false);
-      const locked = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const locked = await getServiceAccess(restaurantId, "OWNER");
       const lockedHtml = renderToStaticMarkup(
         <QuickActions serviceKeys={locked.serviceKeys} />
       );
@@ -209,7 +218,7 @@ describe("navigation under FULL_ACCESS_MODE", () => {
       expect(lockedHtml).not.toContain('href="/reports"');
 
       setFullAccess(true);
-      const open = await getServiceAccess(restaurantId, { role: "OWNER" });
+      const open = await getServiceAccess(restaurantId, "OWNER");
       const openHtml = renderToStaticMarkup(<QuickActions serviceKeys={open.serviceKeys} />);
       expect(openHtml).toContain('href="/billing"');
       expect(openHtml).toContain('href="/reports"');
@@ -224,9 +233,9 @@ describe("navigation under FULL_ACCESS_MODE", () => {
       await seedBasicVenueAndSignIn();
 
       setFullAccess(false);
-      const superOff = await getServiceAccess(restaurantId, { role: "SUPER_ADMIN" });
+      const superOff = await getServiceAccess(restaurantId, "SUPER_ADMIN");
       setFullAccess(true);
-      const superOn = await getServiceAccess(restaurantId, { role: "SUPER_ADMIN" });
+      const superOn = await getServiceAccess(restaurantId, "SUPER_ADMIN");
 
       // A super admin's resolved entitlements carry no service list at all (they
       // bypass by `has`, not by being granted everything), and that is preserved:

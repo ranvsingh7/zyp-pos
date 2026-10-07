@@ -127,6 +127,35 @@ export const updateRestaurantSchema = z.object({
 });
 
 /**
+ * Password rules for the SUPER_ADMIN owner-reset action.
+ *
+ * Deliberately mirrors the established application policy rather than inventing
+ * a stricter one: `signupSchema` (min 8, trimmed) and `resetStaffPasswordSchema`
+ * (min 8, max 200) already agree on the floor, so an owner's admin-issued
+ * password is judged by the same standard as every other credential in the app.
+ * The extra check here is that a non-empty password must contain at least one
+ * non-whitespace character — a raw `.min(8)` would accept eight spaces.
+ */
+export const resetOwnerPasswordSchema = z
+  .object({
+    newPassword: z
+      .string()
+      .trim()
+      .min(8, "Password must be at least 8 characters.")
+      .max(200, "Password is too long."),
+    confirmPassword: z
+      .string()
+      .min(1, "Please confirm the new password.")
+      .max(200, "Password is too long."),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: "Passwords do not match.",
+    path: ["confirmPassword"],
+  });
+
+export type ResetOwnerPasswordInput = z.infer<typeof resetOwnerPasswordSchema>;
+
+/**
  * Intra-state consistency: when the combined rate and both split rates are
  * all present in one payload, CGST + SGST must equal the combined rate
  * (and IGST must equal it for inter-state).

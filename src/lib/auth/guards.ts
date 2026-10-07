@@ -9,7 +9,8 @@ import { LOGO_ROUTE_PATH } from "@/lib/settings/constants";
 import { isFullAccessMode } from "@/lib/config/full-access";
 import type { Role, UserRole } from "./roles";
 
-const PUBLIC_ROLE_ATTRS = "_id fullName email phone role restaurantId isActive createdAt updatedAt";
+const PUBLIC_ROLE_ATTRS =
+  "_id fullName email phone role restaurantId isActive tokenVersion createdAt updatedAt";
 
 export interface CurrentUser {
   id: string;
@@ -29,6 +30,7 @@ function toCurrentUser(doc: {
   role: string;
   restaurantId?: unknown;
   isActive: boolean;
+  tokenVersion?: number | null;
 }): CurrentUser {
   return {
     id: String(doc._id),
@@ -47,7 +49,9 @@ function logAuth(step: string, detail?: Record<string, unknown> | string) {
 }
 
 async function loadUser(): Promise<CurrentUser | null> {
-  const { getSessionToken, getSessionUserId } = await import("@/lib/auth/session");
+  const { getSessionToken, getSessionUserId, getSessionTokenVersion } = await import(
+    "@/lib/auth/session"
+  );
   const token = await getSessionToken();
   const userId = await getSessionUserId();
 
@@ -78,7 +82,24 @@ async function loadUser(): Promise<CurrentUser | null> {
       role: string;
       restaurantId?: unknown;
       isActive: boolean;
+      tokenVersion?: number | null;
     };
+
+    // Session revocation. The cookie is a stateless JWT, so a signature-valid
+    // token is not by itself proof of a current session: a password reset bumps
+    // `tokenVersion`, and any token minted before that bump is rejected here.
+    // This is deliberately scoped to the one user whose counter moved, so a
+    // SUPER_ADMIN performing the reset keeps its own session.
+    const sessionTokenVersion = await getSessionTokenVersion();
+    const storedTokenVersion = typed.tokenVersion ?? 0;
+    if (sessionTokenVersion !== storedTokenVersion) {
+      logAuth("session revoked via tokenVersion bump -> unauthenticated", {
+        userId,
+        step: "loadUser",
+      });
+      return null;
+    }
+
     const current = toCurrentUser(typed);
     logAuth("user loaded", {
       userId: current.id,
