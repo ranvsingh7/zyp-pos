@@ -28,6 +28,7 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft,
+  LoaderCircle,
 } from "lucide-react";
 import { ToastView, type ToastData } from "@/components/menu/toast";
 import { openPrintWindow, writePrintWindow } from "@/components/orders/orders-print";
@@ -104,6 +105,11 @@ function PosInner({
 }) {
   const router = useRouter();
   const { state, dispatch } = usePos();
+  const [isNavigating, startNavigation] = React.useTransition();
+
+  function navigate(path: string) {
+    startNavigation(() => router.push(path));
+  }
 
   const [busy, setBusy] = React.useState(false);
   const [busyKotId, setBusyKotId] = React.useState<string | null>(null);
@@ -150,7 +156,6 @@ function PosInner({
   React.useEffect(() => {
     if (initialTableId || (!state.activeOrder && !state.tableId)) return;
     dispatch({ type: "NEW_ORDER" });
-    setKots([]);
   }, [dispatch, initialTableId, state.activeOrder, state.tableId]);
 
   const hasUnsavedEdits = orderHasUnsavedEdits(state);
@@ -213,7 +218,7 @@ function PosInner({
         setSwitchTarget(table);
         return;
       }
-      router.push(`/pos?table=${encodeURIComponent(table.id)}`);
+      navigate(`/pos?table=${encodeURIComponent(table.id)}`);
       return;
     }
 
@@ -224,7 +229,7 @@ function PosInner({
       setSwitchTarget(table);
       return;
     }
-    router.push(`/pos?table=${encodeURIComponent(table.id)}`);
+    navigate(`/pos?table=${encodeURIComponent(table.id)}`);
   }
 
   function loadTable(table: TableView) {
@@ -560,7 +565,7 @@ function PosInner({
               tables={tables}
               activeOrders={activeOrders}
               heldOrders={heldOrders}
-              busy={busy}
+              busy={busy || isNavigating}
               selectedTableId={selectedTableId}
               onOpenTable={openTable}
               onResumeOrder={resumeHeldOrder}
@@ -575,7 +580,7 @@ function PosInner({
             variant="outline"
             size="sm"
             className="self-start"
-            onClick={() => router.push("/pos")}
+            onClick={() => navigate("/pos")}
           >
             <ArrowLeft className="size-4" />
             Tables
@@ -611,6 +616,13 @@ function PosInner({
           </div>
         </aside>
       </div>
+
+      {isNavigating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/45 backdrop-blur-[1px]">
+          <LoaderCircle className="size-8 animate-spin text-primary" aria-hidden="true" />
+          <span className="sr-only">Loading</span>
+        </div>
+      )}
 
       <VariantPickerDialog
         open={variantPickerItem !== null}

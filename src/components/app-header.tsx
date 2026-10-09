@@ -51,6 +51,8 @@ export function AppHeader({
   serviceKeys,
 }: AppHeaderProps) {
   const pathname = usePathname();
+  const [navigationTarget, setNavigationTarget] = React.useState<string | null>(null);
+  const isNavigating = navigationTarget !== null && pathname !== navigationTarget;
   // Undefined means "not resolved" (e.g. a screen outside a venue context) and
   // shows everything; an explicit list hides what it does not contain.
   const granted = serviceKeys ? new Set(serviceKeys) : null;
@@ -88,7 +90,12 @@ export function AppHeader({
         )}
       </div>
 
-      <nav className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-lg bg-muted/60 p-1">
+      <nav
+        className={cn(
+          "flex min-w-0 items-center gap-1 overflow-x-auto rounded-lg bg-muted/60 p-1 transition-opacity",
+          isNavigating && "pointer-events-none opacity-60"
+        )}
+      >
         {visibleItems.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(`${href}/`);
           return (
@@ -96,6 +103,14 @@ export function AppHeader({
               key={href}
               href={href}
               prefetch={false}
+              onClick={(event) => {
+                if (active) return;
+                if (isNavigating) {
+                  event.preventDefault();
+                  return;
+                }
+                setNavigationTarget(href);
+              }}
               className={cn(
                 "inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors md:px-3",
                 active
