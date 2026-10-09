@@ -277,10 +277,10 @@ describe("entitlement de-duplication (real DB, real request cache scope)", () =>
 
     const { db } = await capture(() => withRequestScope(() => renderPageLike()));
 
-    // The page gate and the header must collapse onto one subscriptions read
-    // and one plans read.
+    // The page gate and the header must collapse onto one subscription read.
+    // Snapshot entitlements do not need a plan lookup.
     expect(reads(db, "subscriptions"), `commands: ${JSON.stringify(db)}`).toBeLessThanOrEqual(2);
-    expect(reads(db, "plans"), `commands: ${JSON.stringify(db)}`).toBe(1);
+    expect(reads(db, "plans"), `commands: ${JSON.stringify(db)}`).toBe(0);
   });
 
   it("2. the page gate and the app header share one entitlement result object", async () => {
@@ -335,7 +335,7 @@ describe("entitlement de-duplication (real DB, real request cache scope)", () =>
     );
 
     expect(reads(db, "subscriptions"), `commands: ${JSON.stringify(db)}`).toBe(1);
-    expect(reads(db, "plans"), `commands: ${JSON.stringify(db)}`).toBe(1);
+    expect(reads(db, "plans"), `commands: ${JSON.stringify(db)}`).toBe(0);
   });
 });
 
@@ -355,7 +355,7 @@ describe("cache scope and tenant/user safety", () => {
 
     // BASIC must not inherit PRO's entitlements, and both must be resolved.
     expect(reads(db, "subscriptions")).toBe(2);
-    expect(reads(db, "plans")).toBe(2);
+    expect(reads(db, "plans")).toBe(0);
   });
 
   it("6. distinct roles within one venue get distinct results", async () => {
@@ -495,7 +495,7 @@ describe("authorization behaviour is unchanged", () => {
     expect(value.source).toBe("SNAPSHOT");
     expect(value.inventory).toBe(false);
     expect(reads(db, "subscriptions")).toBe(1);
-    expect(reads(db, "plans")).toBe(1);
+    expect(reads(db, "plans")).toBe(0);
   });
 
   it("13. FULL_ACCESS_MODE=true opens everything and queries nothing", async () => {

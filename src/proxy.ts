@@ -33,6 +33,7 @@ export async function proxy(request: NextRequest) {
   const isSuper = isSuperAdmin(session?.role ?? null);
 
   const logTraffic = (action: string, reason?: string) => {
+    if (process.env.DEBUG_PROXY !== "true") return;
     console.log(
       `[proxy] ${request.method} ${pathname} -> ${action}` +
         ` | session=${userId ? `valid(user=${userId},` : "none"}` +

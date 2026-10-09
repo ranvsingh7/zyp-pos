@@ -28,12 +28,15 @@ async function MenuPageContent() {
 
   const [categories, rawItems, rawVariants, taxSettings] = await Promise.all([
     MenuCategoryModel.find({ restaurantId: restaurant.id })
+      .select("_id name description isActive displayOrder")
       .sort({ displayOrder: 1, name: 1 })
       .lean(),
     MenuItemModel.find({ restaurantId: restaurant.id })
+      .select("_id categoryId name description itemType vegType imageUrl hasVariants hsnSacCode basePrice isAvailable isActive displayOrder taxOverride")
       .sort({ displayOrder: 1, name: 1 })
       .lean(),
     MenuVariantModel.find({ restaurantId: restaurant.id })
+      .select("_id menuItemId name displayName price description sku sizeValue sizeUnit isActive displayOrder taxOverride")
       .sort({ displayOrder: 1 })
       .lean(),
     getRestaurantTaxSettings(restaurant.id),

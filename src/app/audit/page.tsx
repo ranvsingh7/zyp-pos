@@ -41,12 +41,13 @@ async function AuditContent() {
   }
 
   await connectDB();
-  const staff = await UserModel.find({ restaurantId: restaurant.id })
-    .select("_id fullName role")
-    .sort({ fullName: 1 })
-    .lean();
-
-  const initial = await listAuditLogs(String(restaurant.id), {}, { page: 1, pageSize: 25 });
+  const [staff, initial] = await Promise.all([
+    UserModel.find({ restaurantId: restaurant.id })
+      .select("_id fullName role")
+      .sort({ fullName: 1 })
+      .lean(),
+    listAuditLogs(String(restaurant.id), {}, { page: 1, pageSize: 25 }),
+  ]);
 
   return (
     <div className="min-h-screen bg-background">

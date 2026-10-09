@@ -182,15 +182,16 @@ export const getServiceAccess = cache(
     if (isFullAccessMode()) return fullAccessEntitlement();
 
     await connectDB();
-    const [sub, plan] = await Promise.all([
-      SubscriptionModel.findOne({ restaurantId }).select("planId planName serviceKeys").lean(),
-      // The plan is only needed for the pre-snapshot fallback, but it is
-      // fetched alongside so the common snapshot case is still one round trip.
-      PlanModel.find().select("_id name serviceKeys").lean(),
-    ]);
+    const sub = await SubscriptionModel.findOne({ restaurantId })
+      .select("planId planName serviceKeys")
+      .lean();
+    const hasSnapshot = Boolean(sub && Array.isArray(sub.serviceKeys));
+    const plans = hasSnapshot
+      ? []
+      : await PlanModel.find().select("_id name serviceKeys").lean();
 
     const planById = new Map(
-      plan.map((p) => [
+      plans.map((p) => [
         String(p._id),
         {
           name: String(p.name),

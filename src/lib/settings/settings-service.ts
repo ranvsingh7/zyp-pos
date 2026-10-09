@@ -114,7 +114,9 @@ export async function getSettingsSnapshot(
 ): Promise<RestaurantSettingsSnapshot> {
   await connectDB();
   const [restaurant, settings] = await Promise.all([
-    RestaurantModel.findById(restaurantId).lean(),
+    RestaurantModel.findById(restaurantId)
+      .select("name phone email address city state pincode businessType gstRegistered gstin logo.mimeType logo.size logo.updatedAt")
+      .lean(),
     RestaurantSettingsModel.findOne({ restaurantId }).lean(),
   ]);
   if (!restaurant) throw new SettingsNotFoundError();
@@ -178,7 +180,9 @@ export async function updateRestaurantSettings(
   actor?: { userId?: string | null; role?: string | null }
 ): Promise<RestaurantSettingsSnapshot> {
   await connectDB();
-  const existing = await RestaurantModel.findById(restaurantId).lean();
+  const existing = await RestaurantModel.findById(restaurantId)
+    .select("name phone email address city state pincode businessType gstRegistered gstin")
+    .lean();
   if (!existing) throw new SettingsNotFoundError();
   const current = existing as unknown as RestaurantDoc;
   const settings = (await RestaurantSettingsModel.findOne({ restaurantId }).lean()) as unknown as

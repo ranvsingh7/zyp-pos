@@ -44,6 +44,7 @@ function toCurrentUser(doc: {
 }
 
 function logAuth(step: string, detail?: Record<string, unknown> | string) {
+  if (process.env.DEBUG_AUTH !== "true") return;
   const suffix = typeof detail === "string" ? detail : JSON.stringify(detail ?? {});
   console.log(`[auth-guard] ${step} ${suffix}`);
 }

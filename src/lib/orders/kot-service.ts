@@ -490,6 +490,7 @@ export async function listKots(
     restaurantId,
     status: { $ne: "CANCELLED" },
   })
+    .select("_id kotNumber orderNumber orderType type state status cancellationReason cancelledAt cancelledBy tableName customerName items orderNote printedAt printedCount createdAt createdBy")
     .sort({ printedAt: -1, createdAt: -1 })
     .limit(safeLimit)
     .lean();
