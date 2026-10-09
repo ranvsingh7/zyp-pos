@@ -1,6 +1,8 @@
 "use server";
 
 import { requireAuth, requireRestaurant } from "@/lib/auth/guards";
+import { tableDataTag } from "@/lib/cache-tags";
+import { invalidateNextTag } from "@/lib/next-cache";
 import {
   assertCanEditTables,
   assertCanChangeTableStatus,
@@ -77,6 +79,7 @@ export async function createTableAction(input: unknown): Promise<ActionResult> {
         status: created.status,
       },
     });
+    invalidateNextTag(tableDataTag(restaurantId));
     return { success: true, id: created.id };
   });
 }
@@ -104,6 +107,7 @@ export async function updateTableAction(input: unknown): Promise<ActionResult> {
         isActive: updated.isActive,
       },
     });
+    invalidateNextTag(tableDataTag(restaurantId));
     return { success: true, id: updated.id };
   });
 }
@@ -127,6 +131,7 @@ export async function updateTableStatusAction(
       entityId: updated.id,
       metadata: { status, name: updated.name },
     });
+    invalidateNextTag(tableDataTag(restaurantId));
     return { success: true, id: updated.id };
   });
 }
@@ -150,16 +155,17 @@ export async function setTableActiveAction(
       entityId: updated.id,
       metadata: { isActive, name: updated.name },
     });
+    invalidateNextTag(tableDataTag(restaurantId));
     return { success: true, id: updated.id };
   });
 }
-
 export async function deleteTableAction(input: unknown): Promise<ActionResult> {
   return wrapTableAction(async () => {
     const { restaurantId } = await requireTableContext("edit");
     const id = readId(input);
     if (!id) return { success: false, message: "Invalid input." };
     await deleteTable(restaurantId, id);
+    invalidateNextTag(tableDataTag(restaurantId));
     return { success: true, id };
   });
 }
@@ -180,6 +186,7 @@ export async function reorderTablesAction(
       restaurantId,
       (input as { orderedIds: string[] }).orderedIds
     );
+    invalidateNextTag(tableDataTag(restaurantId));
     return { success: true };
   });
 }
@@ -202,6 +209,7 @@ export async function createSectionAction(
       entityId: created.id,
       metadata: { name: created.name },
     });
+    invalidateNextTag(tableDataTag(restaurantId));
     return { success: true, id: created.id };
   });
 }
@@ -225,6 +233,7 @@ export async function updateSectionAction(
       entityId: updated.id,
       metadata: { name: updated.name, isActive: updated.isActive },
     });
+    invalidateNextTag(tableDataTag(restaurantId));
     return { success: true, id: updated.id };
   });
 }
@@ -252,6 +261,7 @@ export async function setSectionActiveAction(
       entityId: updated.id,
       metadata: { name: updated.name, isActive },
     });
+    invalidateNextTag(tableDataTag(restaurantId));
     return { success: true, id: updated.id };
   });
 }
@@ -264,6 +274,7 @@ export async function deleteSectionAction(
     const id = readId(input);
     if (!id) return { success: false, message: "Invalid input." };
     const result = await deleteSection(restaurantId, id);
+    invalidateNextTag(tableDataTag(restaurantId));
     return {
       success: true,
       message: result.soft ? "Section deactivated." : "Section deleted.",
@@ -281,6 +292,7 @@ export async function reorderSectionsAction(
       return { success: false, message: firstZodMessage(parsed) };
     }
     await reorderSections(restaurantId, parsed.data.orderedIds);
+    invalidateNextTag(tableDataTag(restaurantId));
     return { success: true };
   });
 }

@@ -1,7 +1,10 @@
 import "server-only";
 
 import mongoose from "mongoose";
+import { unstable_cache } from "next/cache";
 import { connectDB } from "@/lib/db";
+import { staffDataTag } from "@/lib/cache-tags";
+import { withNextCache } from "@/lib/next-cache";
 import { OrderModel, type OrderDocument } from "@/models/Order";
 import { BillModel, type BillDocument } from "@/models/Bill";
 import { UserModel } from "@/models/User";
@@ -341,6 +344,20 @@ export async function listOrderTables(
 
 /** Active staff (for the "created by" filter dropdown). */
 export async function listOrderStaff(
+  restaurantId: string
+): Promise<Array<{ id: string; fullName: string; role: Role }>> {
+  return withNextCache(
+    () =>
+      unstable_cache(
+        () => loadOrderStaff(restaurantId),
+        ["order-staff", restaurantId],
+        { tags: [staffDataTag(restaurantId)], revalidate: 300 }
+      )(),
+    () => loadOrderStaff(restaurantId)
+  );
+}
+
+async function loadOrderStaff(
   restaurantId: string
 ): Promise<Array<{ id: string; fullName: string; role: Role }>> {
   await connectDB();

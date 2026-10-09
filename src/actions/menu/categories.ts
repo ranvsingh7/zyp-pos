@@ -1,6 +1,8 @@
 "use server";
 
 import { requireAuth, requireRestaurant } from "@/lib/auth/guards";
+import { menuDataTag } from "@/lib/cache-tags";
+import { invalidateNextTag } from "@/lib/next-cache";
 import { assertCanEditMenu } from "@/lib/menu/permissions";
 import {
   createCategory,
@@ -36,6 +38,7 @@ export async function createCategoryAction(input: unknown): Promise<ActionResult
       return { success: false, message: firstZodMessage(parsed) };
     }
     const created = await createCategory(restaurantId, parsed.data);
+    invalidateNextTag(menuDataTag(restaurantId));
     return { success: true, id: created.id };
   });
 }
@@ -57,6 +60,7 @@ export async function updateCategoryAction(input: unknown): Promise<ActionResult
       return { success: false, message: firstZodMessage(parsed) };
     }
     const updated = await updateCategory(restaurantId, id, parsed.data);
+    invalidateNextTag(menuDataTag(restaurantId));
     return { success: true, id: updated.id };
   });
 }
@@ -75,6 +79,7 @@ export async function deleteCategoryAction(input: unknown): Promise<ActionResult
       restaurantId,
       (input as { id: string }).id
     );
+    invalidateNextTag(menuDataTag(restaurantId));
     return { success: true, message: result.soft ? "Category deactivated." : "Category deleted." };
   });
 }
@@ -92,6 +97,7 @@ export async function toggleCategoryStatusAction(input: unknown): Promise<Action
     }
     const { id, isActive } = input as { id: string; isActive: boolean };
     await toggleCategoryStatus(restaurantId, id, isActive);
+    invalidateNextTag(menuDataTag(restaurantId));
     return { success: true, id };
   });
 }
@@ -104,6 +110,7 @@ export async function reorderCategoriesAction(input: unknown): Promise<ActionRes
       return { success: false, message: firstZodMessage(parsed) };
     }
     await reorderCategories(restaurantId, parsed.data.orderedIds);
+    invalidateNextTag(menuDataTag(restaurantId));
     return { success: true };
   });
 }

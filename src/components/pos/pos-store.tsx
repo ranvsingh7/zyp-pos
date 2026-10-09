@@ -140,10 +140,10 @@ export type PosAction =
   | { type: "NEW_ORDER" }
   | { type: "ORDER_CANCELLED"; orderId: string };
 
-export function initialState(): PosState {
+export function initialState(tableId: string | null = null): PosState {
   return {
     orderType: "DINE_IN",
-    tableId: null,
+    tableId,
     cart: [],
     customerName: "",
     customerPhone: "",
@@ -282,8 +282,18 @@ export type PosDispatch = React.Dispatch<PosAction>;
 const PosStateContext = React.createContext<PosState | null>(null);
 const PosDispatchContext = React.createContext<PosDispatch | null>(null);
 
-export function PosProvider({ children }: { children: React.ReactNode }) {
-  const [state, dispatch] = React.useReducer(reducePos, undefined, initialState);
+export function PosProvider({
+  children,
+  initialTableId = null,
+}: {
+  children: React.ReactNode;
+  initialTableId?: string | null;
+}) {
+  const [state, dispatch] = React.useReducer(
+    reducePos,
+    initialTableId,
+    (tableId) => initialState(tableId)
+  );
   return (
     <PosStateContext.Provider value={state}>
       <PosDispatchContext.Provider value={dispatch}>

@@ -1,6 +1,9 @@
 import "server-only";
 
+import { unstable_cache } from "next/cache";
 import { connectDB } from "@/lib/db";
+import { menuDataTag } from "@/lib/cache-tags";
+import { withNextCache } from "@/lib/next-cache";
 import { MenuItemModel, type MenuItem } from "@/models/MenuItem";
 import { MenuCategoryModel } from "@/models/MenuCategory";
 import { MenuVariantModel } from "@/models/MenuVariant";
@@ -110,14 +113,32 @@ export async function getMenuItems(
   restaurantId: string,
   options: ListItemsOptions = {}
 ): Promise<MenuItemView[]> {
+  const categoryId = options.categoryId ?? null;
+  const forPos = Boolean(options.forPos);
+  return withNextCache(
+    () =>
+      unstable_cache(
+        () => loadMenuItems(restaurantId, categoryId, forPos),
+        ["menu-items", restaurantId, categoryId ?? "all", forPos ? "pos" : "full"],
+        { tags: [menuDataTag(restaurantId)], revalidate: 300 }
+      )(),
+    () => loadMenuItems(restaurantId, categoryId, forPos)
+  );
+}
+
+async function loadMenuItems(
+  restaurantId: string,
+  categoryId: string | null,
+  forPos: boolean
+): Promise<MenuItemView[]> {
   await connectDB();
 
   const query: Record<string, unknown> = { restaurantId };
-  if (options.categoryId) query.categoryId = options.categoryId;
+  if (categoryId) query.categoryId = categoryId;
 
   const itemQuery = MenuItemModel.find(query);
   const variantQuery = MenuVariantModel.find({ restaurantId });
-  if (options.forPos) {
+  if (forPos) {
     itemQuery.select(
       "_id categoryId name vegType hasVariants basePrice isAvailable isActive displayOrder"
     );

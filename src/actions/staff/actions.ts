@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAuth, requireRestaurant } from "@/lib/auth/guards";
+import { staffDataTag } from "@/lib/cache-tags";
+import { invalidateNextTag } from "@/lib/next-cache";
 import { assertCanManageStaff, StaffForbiddenError } from "@/lib/staff/permissions";
 import {
   createStaffSchema,
@@ -100,6 +102,7 @@ export async function createStaffAction(
       parsed.data,
       { userId, role }
     );
+    invalidateNextTag(staffDataTag(restaurantId));
     revalidatePath("/settings/staff");
     return {
       success: true,
@@ -145,6 +148,7 @@ export async function updateStaffAction(
       parsed.data,
       { userId, role }
     );
+    invalidateNextTag(staffDataTag(restaurantId));
     revalidatePath("/settings/staff");
     return { success: true, message: `${member.fullName} updated.`, member };
   });
@@ -160,6 +164,7 @@ export async function setStaffActiveAction(
     const isActive = form.get("isActive") === "true";
     if (!targetId) return { success: false, message: "Staff member is required." };
     const member = await setStaffActive(restaurantId, targetId, isActive, { userId, role });
+    invalidateNextTag(staffDataTag(restaurantId));
     revalidatePath("/settings/staff");
     return {
       success: true,
@@ -194,6 +199,7 @@ export async function resetStaffPasswordAction(
       parsed.data.newPassword,
       { userId, role }
     );
+    invalidateNextTag(staffDataTag(restaurantId));
     revalidatePath("/settings/staff");
     return {
       success: true,

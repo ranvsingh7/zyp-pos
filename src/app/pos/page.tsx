@@ -15,7 +15,11 @@ export const metadata: Metadata = {
   title: "Point of Sale",
 };
 
-async function PosPageContent() {
+async function PosPageContent({
+  searchParams,
+}: {
+  searchParams: Promise<{ table?: string | string[] }>;
+}) {
   const auth = await requireAuth();
   const restaurant = await requireRestaurant();
   const service = await requireService("POS", {
@@ -26,15 +30,21 @@ async function PosPageContent() {
   if (!service.allowed) return service.page;
 
   const restaurantId = String(restaurant.id);
+  const params = await searchParams;
+  const tableParam = Array.isArray(params.table) ? params.table[0] : params.table;
 
-  const [tableData, categories, items, orderData, staffList] =
-    await Promise.all([
-      getTablesAndSections(restaurantId),
-      getMenuCategories(restaurantId),
-      getMenuItems(restaurantId, { forPos: true }),
-      getPosOrders(restaurantId),
-      listOrderStaff(restaurantId),
-    ]);
+  const [tableData, orderData, referenceData] = await Promise.all([
+    getTablesAndSections(restaurantId),
+    getPosOrders(restaurantId),
+    tableParam
+      ? Promise.all([
+          getMenuCategories(restaurantId),
+          getMenuItems(restaurantId, { forPos: true }),
+          listOrderStaff(restaurantId),
+        ])
+      : Promise.resolve(null),
+  ]);
+  const [categories, items, staffList] = referenceData ?? [[], [], []];
 
   // id → { fullName, role } so KOT history can resolve "Cancelled by".
   const staff: StaffMap = Object.fromEntries(
@@ -62,6 +72,7 @@ async function PosPageContent() {
             activeOrders={orderData.activeOrders}
             heldOrders={orderData.heldOrders}
             staff={staff}
+            initialTableId={tableParam ?? null}
           />
         </div>
       </main>
@@ -69,7 +80,11 @@ async function PosPageContent() {
   );
 }
 
-export default async function PosPage() {
+export default async function PosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ table?: string | string[] }>;
+}) {
   return (
     <Suspense
       fallback={
@@ -78,7 +93,7 @@ export default async function PosPage() {
         </div>
       }
     >
-      <PosPageContent />
+      <PosPageContent searchParams={searchParams} />
     </Suspense>
   );
 }

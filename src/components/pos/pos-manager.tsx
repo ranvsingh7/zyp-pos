@@ -27,12 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
-  ReceiptText,
-  ListOrdered,
-  Save,
-  Pause,
-  Play,
-  MoveRight,
+  ArrowLeft,
 } from "lucide-react";
 import { ToastView, type ToastData } from "@/components/menu/toast";
 import { openPrintWindow, writePrintWindow } from "@/components/orders/orders-print";
@@ -61,6 +56,7 @@ export function PosManager({
   activeOrders,
   heldOrders,
   staff,
+  initialTableId,
 }: {
   sections: TableSectionView[];
   tables: TableView[];
@@ -69,9 +65,10 @@ export function PosManager({
   activeOrders: OrderView[];
   heldOrders: OrderView[];
   staff: StaffMap;
+  initialTableId: string | null;
 }) {
   return (
-    <PosProvider>
+    <PosProvider initialTableId={initialTableId}>
       <PosInner
         sections={sections}
         tables={tables}
@@ -80,6 +77,7 @@ export function PosManager({
         activeOrders={activeOrders}
         heldOrders={heldOrders}
         staff={staff}
+        initialTableId={initialTableId}
       />
     </PosProvider>
   );
@@ -93,6 +91,7 @@ function PosInner({
   activeOrders,
   heldOrders,
   staff,
+  initialTableId,
 }: {
   sections: TableSectionView[];
   tables: TableView[];
@@ -101,6 +100,7 @@ function PosInner({
   activeOrders: OrderView[];
   heldOrders: OrderView[];
   staff: StaffMap;
+  initialTableId: string | null;
 }) {
   const router = useRouter();
   const { state, dispatch } = usePos();
@@ -115,6 +115,7 @@ function PosInner({
   const [kots, setKots] = React.useState<KotView[]>([]);
   const [viewKot, setViewKot] = React.useState<KotView | null>(null);
   const [cancelKot, setCancelKot] = React.useState<KotView | null>(null);
+  const initialRouteApplied = React.useRef(false);
 
   const orderId = state.activeOrder?.id ?? null;
   // The KOT history panel mirrors the active order; when that order was just
@@ -131,18 +132,28 @@ function PosInner({
     state.activeOrder?.tableNameSnapshot ??
     null;
 
-  // Sidebar action gating (mirrors the shared order-panel logic).
+  React.useEffect(() => {
+    if (initialRouteApplied.current || !initialTableId) return;
+    initialRouteApplied.current = true;
+    const routeOrder = activeOrders.find((order) => order.tableId === initialTableId);
+    if (routeOrder) {
+      dispatch({ type: "LOAD_ORDER", order: routeOrder });
+    } else if (
+      tables.some(
+        (table) => table.id === initialTableId && table.status === "AVAILABLE"
+      )
+    ) {
+      dispatch({ type: "SELECT_TABLE", tableId: initialTableId });
+    }
+  }, [activeOrders, dispatch, initialTableId, tables]);
+
+  React.useEffect(() => {
+    if (initialTableId || (!state.activeOrder && !state.tableId)) return;
+    dispatch({ type: "NEW_ORDER" });
+    setKots([]);
+  }, [dispatch, initialTableId, state.activeOrder, state.tableId]);
+
   const hasUnsavedEdits = orderHasUnsavedEdits(state);
-  const orderStatus = state.activeOrder?.status;
-  const leftCanSave = hasUnsavedEdits && !busy;
-  const leftCanHold =
-    orderStatus === "OPEN" && !hasUnsavedEdits && !busy;
-  const leftCanResume = orderStatus === "HELD" && !busy;
-  const leftCanMove =
-    orderStatus !== "HELD" &&
-    state.activeOrder?.orderType === "DINE_IN" &&
-    !hasUnsavedEdits &&
-    !busy;
 
   const refreshKots = React.useCallback(async (id: string | null) => {
     if (!id) {
@@ -202,7 +213,7 @@ function PosInner({
         setSwitchTarget(table);
         return;
       }
-      loadTable(table);
+      router.push(`/pos?table=${encodeURIComponent(table.id)}`);
       return;
     }
 
@@ -213,7 +224,7 @@ function PosInner({
       setSwitchTarget(table);
       return;
     }
-    loadTable(table);
+    router.push(`/pos?table=${encodeURIComponent(table.id)}`);
   }
 
   function loadTable(table: TableView) {
@@ -526,9 +537,22 @@ function PosInner({
     }
   }
 
+  const workspaceOpen = Boolean(
+    state.activeOrder ||
+      state.tableId ||
+      (initialTableId && tables.some((table) => table.id === initialTableId))
+  );
+
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 lg:h-full lg:min-h-0 lg:grid-cols-[250px_minmax(0,1fr)_400px] lg:grid-rows-[minmax(0,1fr)]">
+      <div
+        className={
+          workspaceOpen
+            ? "grid grid-cols-1 gap-4 lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_400px] lg:grid-rows-[minmax(0,1fr)]"
+            : "flex min-h-0 flex-1 flex-col"
+        }
+      >
+        {!workspaceOpen && (
         <aside className="flex min-h-0 flex-col gap-3">
           <div className="min-h-0 flex-1 overflow-y-auto">
             <TableGrid
@@ -542,80 +566,20 @@ function PosInner({
               onResumeOrder={resumeHeldOrder}
             />
           </div>
-
-          {state.activeOrder && (
-            <div className="flex shrink-0 flex-col gap-2 rounded-xl border bg-card p-3 shadow-sm">
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => router.push(`/orders/${state.activeOrder!.id}`)}
-                >
-                  <ListOrdered className="size-4" />
-                  Order details
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => router.push(`/orders/${state.activeOrder!.id}`)}
-                >
-                  <ReceiptText className="size-4" />
-                  BILL
-                </Button>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={!leftCanSave}
-                  onClick={() => void handleSave()}
-                >
-                  <Save className="size-4" />
-                  Save order
-                </Button>
-                {orderStatus === "HELD" ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!leftCanResume}
-                    onClick={() => void resumeHeldOrder(state.activeOrder!)}
-                  >
-                    <Play className="size-4" />
-                    Resume order
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!leftCanHold}
-                    onClick={() => void handleHold()}
-                  >
-                    <Pause className="size-4" />
-                    Hold order
-                  </Button>
-                )}
-              </div>
-              {leftCanMove && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                  onClick={() => setMoveOpen(true)}
-                >
-                  <MoveRight className="size-4" />
-                  Move to another table
-                </Button>
-              )}
-            </div>
-          )}
         </aside>
+        )}
 
-        <section className="flex min-h-0 flex-col overflow-hidden">
+        <section className={workspaceOpen ? "flex min-h-0 flex-col gap-3 overflow-hidden" : "hidden"}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="self-start"
+            onClick={() => router.push("/pos")}
+          >
+            <ArrowLeft className="size-4" />
+            Tables
+          </Button>
           <MenuBrowser
             categories={categories}
             items={items}
@@ -623,7 +587,7 @@ function PosInner({
           />
         </section>
 
-        <aside className="flex min-h-0 w-full flex-col lg:w-[400px] lg:justify-self-end">
+        <aside className={workspaceOpen ? "flex min-h-0 w-full flex-col lg:w-[400px] lg:justify-self-end" : "hidden"}>
           <div className="flex min-h-0 w-full flex-1 flex-col">
             <OrderPanel
               className="min-h-0 flex-1"

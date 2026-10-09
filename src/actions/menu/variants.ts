@@ -1,6 +1,8 @@
 "use server";
 
 import { requireAuth, requireRestaurant } from "@/lib/auth/guards";
+import { menuDataTag } from "@/lib/cache-tags";
+import { invalidateNextTag } from "@/lib/next-cache";
 import { assertCanEditMenu } from "@/lib/menu/permissions";
 import {
   createVariant,
@@ -51,6 +53,7 @@ export async function createVariantAction(input: unknown): Promise<ActionResult>
       return { success: false, message: firstZodMessage(parsed) };
     }
     const created = await createVariant(restaurantId, menuItemId, parsed.data);
+    invalidateNextTag(menuDataTag(restaurantId));
     return { success: true, id: created.id };
   });
 }
@@ -71,6 +74,7 @@ export async function updateVariantAction(input: unknown): Promise<ActionResult>
       return { success: false, message: firstZodMessage(parsed) };
     }
     const updated = await updateVariant(restaurantId, id, parsed.data);
+    invalidateNextTag(menuDataTag(restaurantId));
     return { success: true, id: updated.id };
   });
 }
@@ -86,6 +90,7 @@ export async function deleteVariantAction(input: unknown): Promise<ActionResult>
       return { success: false, message: "Invalid input." };
     }
     await deleteVariant(restaurantId, (input as { id: string }).id);
+    invalidateNextTag(menuDataTag(restaurantId));
     return { success: true };
   });
 }
@@ -105,6 +110,7 @@ export async function toggleVariantStatusAction(
     }
     const { id, isActive } = input as { id: string; isActive: boolean };
     await toggleVariantStatus(restaurantId, id, isActive);
+    invalidateNextTag(menuDataTag(restaurantId));
     return { success: true, id };
   });
 }
@@ -121,6 +127,7 @@ export async function reorderVariantsAction(input: unknown): Promise<ActionResul
       parsed.data.menuItemId,
       parsed.data.orderedIds
     );
+    invalidateNextTag(menuDataTag(restaurantId));
     return { success: true };
   });
 }

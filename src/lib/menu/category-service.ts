@@ -1,6 +1,9 @@
 import "server-only";
 
+import { unstable_cache } from "next/cache";
 import { connectDB } from "@/lib/db";
+import { menuDataTag } from "@/lib/cache-tags";
+import { withNextCache } from "@/lib/next-cache";
 import { MenuCategoryModel } from "@/models/MenuCategory";
 import { MenuItemModel } from "@/models/MenuItem";
 import {
@@ -43,9 +46,25 @@ export async function getMenuCategories(
   restaurantId: string,
   options: ListCategoriesOptions = {}
 ): Promise<MenuCategoryView[]> {
+  const includeInactive = Boolean(options.includeInactive);
+  return withNextCache(
+    () =>
+      unstable_cache(
+        () => loadMenuCategories(restaurantId, includeInactive),
+        ["menu-categories", restaurantId, includeInactive ? "all" : "active"],
+        { tags: [menuDataTag(restaurantId)], revalidate: 300 }
+      )(),
+    () => loadMenuCategories(restaurantId, includeInactive)
+  );
+}
+
+async function loadMenuCategories(
+  restaurantId: string,
+  includeInactive: boolean
+): Promise<MenuCategoryView[]> {
   await connectDB();
   const query: Record<string, unknown> = { restaurantId };
-  if (!options.includeInactive) query.isActive = true;
+  if (!includeInactive) query.isActive = true;
 
   const docs = await MenuCategoryModel.find(query)
     .sort({ displayOrder: 1, name: 1 })

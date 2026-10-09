@@ -1,6 +1,8 @@
 "use server";
 
 import { requireAuth, requireRestaurant } from "@/lib/auth/guards";
+import { menuDataTag } from "@/lib/cache-tags";
+import { invalidateNextTag } from "@/lib/next-cache";
 import {
   assertCanEditMenu,
   assertCanToggleAvailability,
@@ -44,6 +46,7 @@ export async function createMenuItemAction(input: unknown): Promise<ActionResult
       return { success: false, message: firstZodMessage(parsed) };
     }
     const created = await createMenuItem(restaurantId, parsed.data);
+    invalidateNextTag(menuDataTag(restaurantId));
     return { success: true, id: created.id };
   });
 }
@@ -60,6 +63,7 @@ export async function updateMenuItemAction(input: unknown): Promise<ActionResult
       parsed.data.id,
       parsed.data
     );
+    invalidateNextTag(menuDataTag(restaurantId));
     return { success: true, id: updated.id };
   });
 }
@@ -75,6 +79,7 @@ export async function deleteMenuItemAction(input: unknown): Promise<ActionResult
       return { success: false, message: "Invalid input." };
     }
     await deleteMenuItem(restaurantId, (input as { id: string }).id);
+    invalidateNextTag(menuDataTag(restaurantId));
     return { success: true };
   });
 }
@@ -94,6 +99,7 @@ export async function toggleMenuItemAvailabilityAction(
     }
     const { id, isAvailable } = input as { id: string; isAvailable: boolean };
     await toggleMenuItemAvailability(restaurantId, id, isAvailable);
+    invalidateNextTag(menuDataTag(restaurantId));
     return { success: true, id };
   });
 }
@@ -113,6 +119,7 @@ export async function toggleMenuItemStatusAction(
     }
     const { id, isActive } = input as { id: string; isActive: boolean };
     await toggleMenuItemStatus(restaurantId, id, isActive);
+    invalidateNextTag(menuDataTag(restaurantId));
     return { success: true, id };
   });
 }

@@ -1,7 +1,10 @@
 import "server-only";
 
+import { unstable_cache } from "next/cache";
 import mongoose from "mongoose";
 import { connectDB } from "@/lib/db";
+import { tableDataTag } from "@/lib/cache-tags";
+import { withNextCache } from "@/lib/next-cache";
 import { RestaurantTableModel } from "@/models/RestaurantTable";
 import { TableSectionModel } from "@/models/TableSection";
 import { OrderModel } from "@/models/Order";
@@ -103,6 +106,20 @@ export async function getTables(
 }
 
 export async function getTablesAndSections(
+  restaurantId: string
+): Promise<{ tables: TableView[]; sections: TableSectionView[] }> {
+  return withNextCache(
+    () =>
+      unstable_cache(
+        () => loadTablesAndSections(restaurantId),
+        ["tables-and-sections", restaurantId],
+        { tags: [tableDataTag(restaurantId)], revalidate: 300 }
+      )(),
+    () => loadTablesAndSections(restaurantId)
+  );
+}
+
+async function loadTablesAndSections(
   restaurantId: string
 ): Promise<{ tables: TableView[]; sections: TableSectionView[] }> {
   await connectDB();
