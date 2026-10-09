@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { Search, X, Plus } from "lucide-react";
 import { cn } from "cn";
 import { Input } from "@/components/ui/input";
@@ -18,17 +19,35 @@ export function MenuBrowser({
   onAddItem: (item: MenuItemView) => void;
 }) {
   const { state, dispatch } = usePos();
-  const activeCategories = categories.filter((c) => c.isActive);
-  const sorted = [...items].sort((a, b) => a.displayOrder - b.displayOrder);
-
-  const sellable = sorted.filter((item) => item.isActive);
+  const activeCategories = useMemo(
+    () => categories.filter((c) => c.isActive),
+    [categories]
+  );
+  const sellable = useMemo(
+    () =>
+      [...items]
+        .sort((a, b) => a.displayOrder - b.displayOrder)
+        .filter((item) => item.isActive),
+    [items]
+  );
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of sellable) {
+      counts.set(item.categoryId, (counts.get(item.categoryId) ?? 0) + 1);
+    }
+    return counts;
+  }, [sellable]);
 
   const normalized = state.search.trim().toLowerCase();
-  const filtered = sellable.filter(
-    (item) =>
-      (state.selectedCategory === "all" ||
-        item.categoryId === state.selectedCategory) &&
-      (!normalized || item.name.toLowerCase().includes(normalized))
+  const filtered = useMemo(
+    () =>
+      sellable.filter(
+        (item) =>
+          (state.selectedCategory === "all" ||
+            item.categoryId === state.selectedCategory) &&
+          (!normalized || item.name.toLowerCase().includes(normalized))
+      ),
+    [normalized, sellable, state.selectedCategory]
   );
 
   return (
@@ -71,7 +90,7 @@ export function MenuBrowser({
           All
         </button>
         {activeCategories.map((c) => {
-          const count = sellable.filter((item) => item.categoryId === c.id).length;
+          const count = categoryCounts.get(c.id) ?? 0;
           if (count === 0) return null;
           return (
             <button

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Play } from "lucide-react";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
@@ -51,11 +51,21 @@ export function TableGrid({
 }) {
   const [sectionFilter, setSectionFilter] = useState<string>("all");
 
-  const activeSections = sections.filter((s) => s.isActive);
-  const visibleTables =
-    sectionFilter === "all"
-      ? tables.filter((t) => t.isActive)
-      : tables.filter((t) => t.isActive && t.sectionId === sectionFilter);
+  const activeSections = useMemo(
+    () => sections.filter((s) => s.isActive),
+    [sections]
+  );
+  const visibleTables = useMemo(
+    () =>
+      sectionFilter === "all"
+        ? tables.filter((t) => t.isActive)
+        : tables.filter((t) => t.isActive && t.sectionId === sectionFilter),
+    [sectionFilter, tables]
+  );
+  const activeOrdersByTableId = useMemo(
+    () => new Map(activeOrders.map((order) => [order.tableId, order])),
+    [activeOrders]
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -104,7 +114,7 @@ export function TableGrid({
       ) : (
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-2 xl:grid-cols-3">
           {visibleTables.map((table) => {
-            const order = activeOrders.find((o) => o.tableId === table.id);
+            const order = activeOrdersByTableId.get(table.id);
             const isSelected = selectedTableId === table.id;
             const hasNewKot = order?.pendingKitchenPrint != null;
             const clickable = table.status === "AVAILABLE" || order != null;

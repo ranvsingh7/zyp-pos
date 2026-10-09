@@ -3,11 +3,10 @@ import { requireAuth, requireRestaurant } from "@/lib/auth/guards";
 import { requireService } from "@/lib/services/service-gate";
 import { AppHeaderServer } from "@/components/app-header-server";
 import { PosManager } from "@/components/pos/pos-manager";
-import { getTables } from "@/lib/tables/table-service";
-import { getSections } from "@/lib/tables/section-service";
+import { getTablesAndSections } from "@/lib/tables/table-service";
 import { getMenuCategories } from "@/lib/menu/category-service";
 import { getMenuItems } from "@/lib/menu/item-service";
-import { getActiveOrders, getHeldOrders } from "@/lib/orders/order-service";
+import { getPosOrders } from "@/lib/orders/order-service";
 import { listOrderStaff } from "@/lib/orders/orders-management";
 import type { StaffMap } from "@/lib/orders/types";
 import type { Metadata } from "next";
@@ -28,14 +27,12 @@ async function PosPageContent() {
 
   const restaurantId = String(restaurant.id);
 
-  const [tables, sections, categories, items, activeOrders, heldOrders, staffList] =
+  const [tableData, categories, items, orderData, staffList] =
     await Promise.all([
-      getTables(restaurantId),
-      getSections(restaurantId),
+      getTablesAndSections(restaurantId),
       getMenuCategories(restaurantId),
-      getMenuItems(restaurantId),
-      getActiveOrders(restaurantId),
-      getHeldOrders(restaurantId),
+      getMenuItems(restaurantId, { forPos: true }),
+      getPosOrders(restaurantId),
       listOrderStaff(restaurantId),
     ]);
 
@@ -58,12 +55,12 @@ async function PosPageContent() {
         </div>
         <div className="min-h-0 flex-1 pb-4 lg:pb-6">
           <PosManager
-            sections={sections}
-            tables={tables}
+            sections={tableData.sections}
+            tables={tableData.tables}
             categories={categories}
             items={items}
-            activeOrders={activeOrders}
-            heldOrders={heldOrders}
+            activeOrders={orderData.activeOrders}
+            heldOrders={orderData.heldOrders}
             staff={staff}
           />
         </div>

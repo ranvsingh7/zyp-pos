@@ -262,7 +262,11 @@ function PosInner({
    * QUICK_SALE) or updates the existing one. Never prints. Returns the saved
    * order, or null on failure.
    */
-  async function performSave(): Promise<OrderView | null> {
+  async function performSave(options: {
+    refresh?: boolean;
+    loadIntoState?: boolean;
+  } = {}): Promise<OrderView | null> {
+    const { refresh = true, loadIntoState = true } = options;
     if (!state.tableId && !state.activeOrder && state.orderType === "DINE_IN") {
       showToast("error", "Select a table first.");
       return null;
@@ -283,7 +287,7 @@ function PosInner({
           return null;
         }
         saved = result.order ?? state.activeOrder;
-        dispatch({ type: "LOAD_ORDER", order: saved });
+        if (loadIntoState) dispatch({ type: "LOAD_ORDER", order: saved });
       } else {
         const result = await createOrderAction({
           orderType: state.orderType,
@@ -301,14 +305,16 @@ function PosInner({
           return null;
         }
         saved = result.order ?? null;
-        if (saved) dispatch({ type: "LOAD_ORDER", order: saved });
+        if (saved && loadIntoState) dispatch({ type: "LOAD_ORDER", order: saved });
       }
       if (!saved) return null;
       // The server-computed table status / active order list is the source of
       // truth — refresh so the TableGrid and props reflect the mutation right
       // away (switching back to this table must show the current order).
-      void refreshKots(saved.id);
-      router.refresh();
+      if (refresh) {
+        void refreshKots(saved.id);
+        router.refresh();
+      }
       return saved;
     } catch (error: unknown) {
       showToast(
@@ -342,7 +348,8 @@ function PosInner({
       showToast("error", "Printing could not be started.");
       return;
     }
-    const saved = await performSave();
+    const existingOrderId = state.activeOrder?.id ?? null;
+    const saved = await performSave({ refresh: false, loadIntoState: false });
     if (!saved) {
       try {
         win.close();
@@ -355,11 +362,15 @@ function PosInner({
     try {
       const printed = await printKotAction({ orderId: saved.id });
       if (!printed.success) {
+        dispatch({ type: "LOAD_ORDER", order: saved });
+        router.refresh();
         win.close();
         showToast("error", printed.message ?? "Order saved, but printing failed.");
         return;
       }
       if (printed.hasPending === false || !printed.html) {
+        dispatch({ type: "LOAD_ORDER", order: printed.order ?? saved });
+        router.refresh();
         win.close();
         showToast("success", "Order saved — nothing new to print.");
         return;
@@ -367,7 +378,11 @@ function PosInner({
       writePrintWindow(win, printed.html);
       showToast("success", `KOT ${printed.kotNumber} printed.`);
       if (printed.order) dispatch({ type: "LOAD_ORDER", order: printed.order });
-      void refreshKots(saved.id);
+      if (existingOrderId === saved.id) {
+        void refreshKots(saved.id);
+      } else {
+        router.refresh();
+      }
     } catch (error) {
       try {
         win.close();

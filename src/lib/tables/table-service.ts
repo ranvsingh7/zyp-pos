@@ -13,6 +13,7 @@ import {
 import { exactCaseInsensitiveRegex, naturalCompare } from "@/lib/tables/utils";
 import type { TableInput } from "@/lib/tables/validation";
 import type { TableView } from "@/lib/tables/types";
+import type { TableSectionView } from "@/lib/tables/types";
 import type { TableStatus } from "@/lib/tables/constants";
 
 export interface ListTablesOptions {
@@ -99,6 +100,56 @@ export async function getTables(
       naturalCompare(a.name, b.name) ||
       a.id.localeCompare(b.id)
   );
+}
+
+export async function getTablesAndSections(
+  restaurantId: string
+): Promise<{ tables: TableView[]; sections: TableSectionView[] }> {
+  await connectDB();
+
+  const [tableDocs, sectionDocs] = await Promise.all([
+    RestaurantTableModel.find({ restaurantId, isActive: true })
+      .sort({ displayOrder: 1 })
+      .lean(),
+    TableSectionModel.find({ restaurantId, isActive: true })
+      .sort({ displayOrder: 1 })
+      .lean(),
+  ]);
+
+  const sectionNameById = new Map(
+    sectionDocs.map((section) => [String(section._id), String(section.name)])
+  );
+  const tables = tableDocs
+    .map((table) =>
+      tableToView(
+        table as unknown as TableDocument,
+        table.sectionId
+          ? sectionNameById.get(String(table.sectionId)) ?? null
+          : null
+      )
+    )
+    .sort(
+      (a, b) =>
+        a.displayOrder - b.displayOrder ||
+        naturalCompare(a.name, b.name) ||
+        a.id.localeCompare(b.id)
+    );
+
+  const sections = sectionDocs
+    .map((section) => ({
+      id: String(section._id),
+      name: String(section.name),
+      displayOrder: section.displayOrder,
+      isActive: section.isActive,
+    }))
+    .sort(
+      (a, b) =>
+        a.displayOrder - b.displayOrder ||
+        naturalCompare(a.name, b.name) ||
+        a.id.localeCompare(b.id)
+    );
+
+  return { tables, sections };
 }
 
 async function assertUniqueTableName(

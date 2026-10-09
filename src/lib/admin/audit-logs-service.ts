@@ -59,15 +59,36 @@ export async function listPlatformAuditLogs(
     ];
   }
 
-  const [logs, total, users, restaurants] = await Promise.all([
+  const [logs, total] = await Promise.all([
     TableAuditLogModel.find(query as QueryFilter<{ createdAt: Date }>)
       .sort({ createdAt: -1 })
       .skip((page - 1) * pageSize)
       .limit(pageSize)
       .lean(),
     TableAuditLogModel.countDocuments(query as QueryFilter<{ createdAt: Date }>),
-    UserModel.find().select("_id fullName email").lean(),
-    RestaurantModel.find().select("_id name").lean(),
+  ]);
+
+  const actorIds = [
+    ...new Set(logs.flatMap((log) => (log.userId ? [String(log.userId)] : []))),
+  ];
+  const restaurantIds = [
+    ...new Set(
+      logs.flatMap((log) =>
+        log.restaurantId ? [String(log.restaurantId)] : []
+      )
+    ),
+  ];
+  const [users, restaurants] = await Promise.all([
+    actorIds.length
+      ? UserModel.find({ _id: { $in: actorIds } })
+          .select("_id fullName email")
+          .lean()
+      : [],
+    restaurantIds.length
+      ? RestaurantModel.find({ _id: { $in: restaurantIds } })
+          .select("_id name")
+          .lean()
+      : [],
   ]);
 
   const userById = new Map(users.map((u) => [String(u._id), u]));

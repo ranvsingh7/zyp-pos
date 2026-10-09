@@ -95,6 +95,7 @@ export function AppHeader({
             <Link
               key={href}
               href={href}
+              prefetch={false}
               className={cn(
                 "inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors md:px-3",
                 active

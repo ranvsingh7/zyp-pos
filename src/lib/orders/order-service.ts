@@ -19,7 +19,13 @@ import {
 } from "@/lib/orders/constants";
 import type { OrderItemLineInput } from "@/lib/orders/validation";
 import type { OrderView } from "@/lib/orders/types";
-import { pendingKitchenKind, splitKitchenQuantities, toKotItemView, toKotPrintedLine } from "@/lib/orders/kot-service";
+import {
+  pendingKitchenKind,
+  splitKitchenQuantities,
+  toKotItemView,
+  toKotPrintedLine,
+  type KotPrintedLine,
+} from "@/lib/orders/kot-service";
 import { KotModel, type KotItem } from "@/models/KitchenOrderTicket";
 import { writeAuditLog } from "@/lib/audit/audit-service";
 
@@ -43,7 +49,10 @@ interface BuiltOrderItem {
   note: string | null;
 }
 
-async function toOrderView(doc: OrderDocument): Promise<OrderView> {
+async function toOrderView(
+  doc: OrderDocument,
+  printedLinesOverride?: KotPrintedLine[]
+): Promise<OrderView> {
   const items = doc.items as unknown as OrderItem[];
   const orderNote = doc.orderNote ?? null;
 
@@ -52,18 +61,17 @@ async function toOrderView(doc: OrderDocument): Promise<OrderView> {
   // KOTs are excluded: their quantities were removed from the order, so they
   // must never count as a baseline (otherwise re-added items would be treated
   // as already printed and never re-sent).
-  const printedKots = await KotModel.find({
-    restaurantId: doc.restaurantId as unknown as string,
-    orderId: doc._id as unknown as string,
-    printedAt: { $ne: null },
-    status: { $ne: "CANCELLED" },
-  })
-    .select("items")
-    .lean();
-
-  const printedLines = (printedKots as unknown as { items: KotItem[] }[]).flatMap(
-    (kot) => kot.items.map(toKotPrintedLine)
-  );
+  const printedLines = printedLinesOverride ??
+    (
+      (await KotModel.find({
+        restaurantId: doc.restaurantId as unknown as string,
+        orderId: doc._id as unknown as string,
+        printedAt: { $ne: null },
+        status: { $ne: "CANCELLED" },
+      })
+        .select("items")
+        .lean()) as unknown as { items: KotItem[] }[]
+    ).flatMap((kot) => kot.items.map(toKotPrintedLine));
 
   const pendingKitchenPrint = pendingKitchenKind(
     { items, orderNote } as Record<string, unknown>,
@@ -394,7 +402,7 @@ export async function getActiveOrders(restaurantId: string): Promise<OrderView[]
   })
     .sort({ createdAt: -1 })
     .lean();
-  return Promise.all(docs.map((d) => toOrderView(d as unknown as OrderDocument)));
+  return loadOrderViews(restaurantId, docs);
 }
 
 export async function getHeldOrders(restaurantId: string): Promise<OrderView[]> {
@@ -402,7 +410,62 @@ export async function getHeldOrders(restaurantId: string): Promise<OrderView[]> 
   const docs = await OrderModel.find({ restaurantId, status: "HELD" })
     .sort({ createdAt: -1 })
     .lean();
-  return Promise.all(docs.map((d) => toOrderView(d as unknown as OrderDocument)));
+  return loadOrderViews(restaurantId, docs);
+}
+
+export async function getPosOrders(
+  restaurantId: string
+): Promise<{ activeOrders: OrderView[]; heldOrders: OrderView[] }> {
+  await connectDB();
+  const docs = await OrderModel.find({
+    restaurantId,
+    status: { $in: [...ACTIVE_ORDER_STATUSES, "HELD"] },
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+  const views = await loadOrderViews(restaurantId, docs);
+
+  return {
+    activeOrders: views.filter((order) => order.status !== "HELD"),
+    heldOrders: views.filter((order) => order.status === "HELD"),
+  };
+}
+
+async function loadOrderViews(
+  restaurantId: string,
+  docs: unknown[]
+): Promise<OrderView[]> {
+  if (docs.length === 0) return [];
+
+  const orderIds = docs.map((doc) => String((doc as { _id: unknown })._id));
+  const kotQuery: Record<string, unknown> = {
+    restaurantId,
+    orderId: { $in: orderIds },
+    printedAt: { $ne: null },
+    status: { $ne: "CANCELLED" },
+  };
+  const kots = (await KotModel.find(kotQuery)
+    .select("orderId items")
+    .lean()) as unknown as { orderId: unknown; items: KotItem[] }[];
+
+  const printedLinesByOrder = new Map<string, KotItem[]>();
+  for (const kot of kots) {
+    const key = String(kot.orderId);
+    const lines = printedLinesByOrder.get(key) ?? [];
+    lines.push(...kot.items);
+    printedLinesByOrder.set(key, lines);
+  }
+
+  return Promise.all(
+    docs.map((doc) => {
+      const order = doc as OrderDocument;
+      const printedLines =
+        printedLinesByOrder.get(String(order._id))?.flatMap((item) => [
+          toKotPrintedLine(item),
+        ]) ?? [];
+      return toOrderView(order, printedLines);
+    })
+  );
 }
 
 export async function getOrder(

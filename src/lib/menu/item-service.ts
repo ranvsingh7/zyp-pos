@@ -23,6 +23,7 @@ import type { MenuItemView, MenuVariantView } from "@/lib/menu/types";
 
 export interface ListItemsOptions {
   categoryId?: string | null;
+  forPos?: boolean;
 }
 
 export type MenuItemDoc = MenuItem & { _id: unknown };
@@ -114,12 +115,19 @@ export async function getMenuItems(
   const query: Record<string, unknown> = { restaurantId };
   if (options.categoryId) query.categoryId = options.categoryId;
 
+  const itemQuery = MenuItemModel.find(query);
+  const variantQuery = MenuVariantModel.find({ restaurantId });
+  if (options.forPos) {
+    itemQuery.select(
+      "_id categoryId name vegType hasVariants basePrice isAvailable isActive displayOrder"
+    );
+    variantQuery.select("_id menuItemId name displayName price displayOrder isActive");
+  }
+
   const [itemDocs, categoryDocs, variantDocs] = await Promise.all([
-    MenuItemModel.find(query).sort({ displayOrder: 1, name: 1 }).lean(),
+    itemQuery.sort({ displayOrder: 1, name: 1 }).lean(),
     MenuCategoryModel.find({ restaurantId }).select("_id name").lean(),
-    MenuVariantModel.find({ restaurantId })
-      .sort({ menuItemId: 1, displayOrder: 1, name: 1 })
-      .lean(),
+    variantQuery.sort({ menuItemId: 1, displayOrder: 1, name: 1 }).lean(),
   ]);
 
   const categoryNameById = new Map(

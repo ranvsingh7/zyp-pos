@@ -805,6 +805,9 @@ export async function listRestaurants(
   }
 
   const restaurantDocs = await RestaurantModel.find(query)
+    .select(
+      "_id name ownerId phone email address city state pincode businessType gstRegistered gstin isActive createdAt updatedAt"
+    )
     .sort({ createdAt: -1 })
     .skip((page - 1) * pageSize)
     .limit(pageSize)
