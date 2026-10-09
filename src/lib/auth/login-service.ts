@@ -64,8 +64,14 @@ export async function attemptLogin(input: LoginAttemptInput): Promise<LoginResul
   const ip = input.ip?.trim() || null;
   const userAgent = input.userAgent?.trim() || null;
   const requestId = input.requestId ?? null;
+  const loginKey = `${email.toLowerCase()}:${ip ?? "unknown"}`;
 
   await connectDB();
+  const rateLimitDecision = rateLimit(
+    `login:${loginKey}`,
+    LOGIN_ATTEMPT_LIMIT,
+    LOGIN_ATTEMPT_WINDOW_MS
+  );
   const doc = await UserModel.aggregate<LoginUserDoc>([
     // Case-insensitive on purpose. Email addresses are case-insensitive in
     // practice, stored values are lowercased by the schema, and an exact-match
@@ -87,14 +93,9 @@ export async function attemptLogin(input: LoginAttemptInput): Promise<LoginResul
   ]);
   const user = doc[0] ?? null;
   const restaurantId = user?.restaurantId ? String(user.restaurantId) : null;
-  const loginKey = `${email.toLowerCase()}:${ip ?? "unknown"}`;
 
   // Shared MongoDB-backed bucket: one budget across all instances/processes.
-  const decision = await rateLimit(
-    `login:${loginKey}`,
-    LOGIN_ATTEMPT_LIMIT,
-    LOGIN_ATTEMPT_WINDOW_MS
-  );
+  const decision = await rateLimitDecision;
 
   if (!decision.allowed) {
     await writeAuditLog({

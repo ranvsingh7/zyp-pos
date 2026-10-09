@@ -155,7 +155,7 @@ export async function moveOrderAction(
  */
 export async function printKotAction(input: unknown): Promise<ActionResult> {
   return wrapOrderAction(async () => {
-    const { restaurantId, restaurantName, userId } = await requireOrderContext();
+    const { restaurantId, restaurantName, userId, role } = await requireOrderContext();
     const parsed = printKotInputSchema.safeParse(input);
     if (!parsed.success) {
       return { success: false, message: firstZodMessage(parsed) };
@@ -163,7 +163,8 @@ export async function printKotAction(input: unknown): Promise<ActionResult> {
     const { kot, hasPending } = await printPendingKot(
       restaurantId,
       parsed.data.orderId,
-      userId
+      userId,
+      role
     );
     if (!hasPending || !kot) {
       return { success: true, hasPending: false, message: "No new items to print." };

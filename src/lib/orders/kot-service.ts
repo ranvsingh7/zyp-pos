@@ -21,6 +21,7 @@ import {
   type OrderType,
 } from "@/lib/orders/constants";
 import type { KotItemAction, KotView } from "@/lib/orders/types";
+import type { Role } from "@/lib/auth/roles";
 import { writeAuditLog } from "@/lib/audit/audit-service";
 
 function toKotView(doc: KitchenOrderTicketDocument): KotView {
@@ -342,6 +343,7 @@ export async function printPendingKot(
   restaurantId: string,
   orderId: string,
   userId: string,
+  actorRole?: Role,
   attempt = 0
 ): Promise<PendingPrintResult> {
   await connectDB();
@@ -426,7 +428,7 @@ export async function printPendingKot(
     if (existing) {
       doc = existing as unknown as KitchenOrderTicketDocument;
     } else if (attempt < 5) {
-      return printPendingKot(restaurantId, orderId, userId, attempt + 1);
+      return printPendingKot(restaurantId, orderId, userId, actorRole, attempt + 1);
     } else {
       throw error;
     }
@@ -439,6 +441,7 @@ export async function printPendingKot(
   await writeAuditLog({
     restaurantId,
     actorUserId: userId,
+    actorRole,
     action: "KOT_CREATED",
     resourceType: "KOT",
     resourceId: String(doc._id),
